@@ -50,6 +50,8 @@ function readUnit(raw: unknown): FamilyUnit {
   if (!Array.isArray(item.childrenIds) || item.childrenIds.length > 100) throw new Error('Invalid children list.');
   const childrenIds = [...new Set(item.childrenIds.map((id) => validId(id, 'Child ID')))];
   if (!husbandId && !wifeId) throw new Error('A family unit needs at least one parent.');
+  if (husbandId && husbandId === wifeId) throw new Error('A family unit needs two different partners.');
+  if (childrenIds.includes(husbandId ?? '') || childrenIds.includes(wifeId ?? '')) throw new Error('A parent cannot also be a child in the same family unit.');
   return { id: validId(item.id, 'Family unit ID'), husbandId, wifeId, anniversaryDate: nullableDate(item.anniversaryDate), childrenIds };
 }
 
@@ -68,6 +70,12 @@ export function parseTreeImport(text: string): FamilyTreeData {
   const unitIds = new Set(familyUnits.map((unit) => unit.id));
   if (unitIds.size !== familyUnits.length) throw new Error('Duplicate family-unit IDs are not allowed.');
   for (const unit of familyUnits) for (const id of [unit.husbandId, unit.wifeId, ...unit.childrenIds]) if (id && !personIds.has(id)) throw new Error(`Family unit ${unit.id} references an unknown person.`);
+  const parentUnitByChild = new Map<string, string>();
+  for (const unit of familyUnits) for (const childId of unit.childrenIds) {
+    const existingUnit = parentUnitByChild.get(childId);
+    if (existingUnit) throw new Error(`Child ${childId} is assigned to more than one parent family (${existingUnit} and ${unit.id}).`);
+    parentUnitByChild.set(childId, unit.id);
+  }
   const selectedRootFamilyUnitId = item.selectedRootFamilyUnitId == null ? null : validId(item.selectedRootFamilyUnitId, 'Root ID');
   if (selectedRootFamilyUnitId && !unitIds.has(selectedRootFamilyUnitId)) throw new Error('The selected root family unit does not exist.');
   return { appVersion: 2, selectedRootFamilyUnitId, createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(), updatedAt: new Date().toISOString(), people, familyUnits };

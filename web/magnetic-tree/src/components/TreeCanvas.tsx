@@ -1,16 +1,8 @@
 import { memo, useEffect, useMemo } from 'react';
-import { Background, BackgroundVariant, Controls, Handle, MiniMap, Panel, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
+import { Background, BackgroundVariant, Controls, Handle, MiniMap, Panel, Position, ReactFlow, useReactFlow, type NodeProps } from '@xyflow/react';
 import { Crown, Heart, MapPin, Search, Sparkles } from 'lucide-react';
-import type { FamilyTreeData, Person } from '../types/family';
-
-interface FamilyNodeData extends Record<string, unknown> {
-  people: Person[];
-  root: boolean;
-  highlighted: boolean;
-  selectedPersonId: string | null;
-  onSelect: (id: string) => void;
-}
-type FamilyNode = Node<FamilyNodeData, 'family'>;
+import type { FamilyTreeData } from '../types/family';
+import { buildTreeGraph, type FamilyNode } from '../lib/treeGraph';
 
 const FamilyCard = memo(({ data }: NodeProps<FamilyNode>) => (
   <article className={`family-node ${data.root ? 'is-root' : ''} ${data.highlighted ? 'is-highlighted' : ''}`}>
@@ -45,51 +37,10 @@ function AutoFocus({ focusId, graphKey }: { focusId: string | null; graphKey: st
   return null;
 }
 
-function graph(tree: FamilyTreeData, selectedPersonId: string | null, highlightedPath: string[], onSelect: (id: string) => void): { nodes: FamilyNode[]; edges: Edge[]; personNode: Map<string, string> } {
-  const personNode = new Map<string, string>();
-  const peopleById = new Map(tree.people.map((person) => [person.id, person]));
-  const membersByNode = new Map<string, Person[]>();
-  for (const unit of tree.familyUnits) {
-    const nodeId = `unit:${unit.id}`;
-    const members = [unit.husbandId, unit.wifeId].map((id) => id ? peopleById.get(id) : null).filter((person): person is Person => Boolean(person));
-    if (members.length) membersByNode.set(nodeId, members);
-    for (const person of members) if (!personNode.has(person.id)) personNode.set(person.id, nodeId);
-  }
-  for (const person of tree.people) if (!personNode.has(person.id)) personNode.set(person.id, `person:${person.id}`);
-  for (const person of tree.people) if (personNode.get(person.id)?.startsWith('person:')) membersByNode.set(`person:${person.id}`, [person]);
-  const connections: Array<[string, string, string]> = [];
-  for (const unit of tree.familyUnits) {
-    const source = `unit:${unit.id}`;
-    for (const childId of unit.childrenIds) { const target = personNode.get(childId); if (target && target !== source) connections.push([source, target, `${unit.id}:${childId}`]); }
-  }
-  const incoming = new Map<string, number>();
-  for (const [, target] of connections) incoming.set(target, (incoming.get(target) ?? 0) + 1);
-  const rootNode = tree.selectedRootFamilyUnitId ? `unit:${tree.selectedRootFamilyUnitId}` : null;
-  const roots = [...membersByNode.keys()].filter((id) => !incoming.has(id));
-  if (rootNode && roots.includes(rootNode)) {
-    roots.splice(roots.indexOf(rootNode), 1);
-    roots.unshift(rootNode);
-  }
-  const depth = new Map<string, number>(); const queue = roots.map((id) => ({ id, depth: 0 }));
-  while (queue.length) { const current = queue.shift()!; if ((depth.get(current.id) ?? Infinity) <= current.depth) continue; depth.set(current.id, current.depth); for (const [source, target] of connections) if (source === current.id) queue.push({ id: target, depth: current.depth + 1 }); }
-  for (const id of membersByNode.keys()) if (!depth.has(id)) depth.set(id, 0);
-  const rows = new Map<number, string[]>(); for (const [id, level] of depth) rows.set(level, [...(rows.get(level) ?? []), id]);
-  const highlighted = new Set(highlightedPath.map((id) => personNode.get(id)));
-  const nodes: FamilyNode[] = [];
-  for (const [level, ids] of [...rows.entries()].sort(([a], [b]) => a - b)) {
-    ids.sort((a, b) => (membersByNode.get(a)?.[0]?.name ?? '').localeCompare(membersByNode.get(b)?.[0]?.name ?? ''));
-    const width = (ids.length - 1) * 410;
-    ids.forEach((id, index) => nodes.push({ id, type: 'family', position: { x: index * 410 - width / 2, y: level * 250 }, draggable: false, selectable: false, data: { people: membersByNode.get(id) ?? [], root: id === rootNode, highlighted: highlighted.has(id), selectedPersonId, onSelect } }));
-  }
-  const activePairs = new Set<string>(); for (let index = 0; index < highlightedPath.length - 1; index += 1) activePairs.add(`${personNode.get(highlightedPath[index])}|${personNode.get(highlightedPath[index + 1])}`);
-  const edges = connections.map(([source, target, id]) => ({ id, source, target, type: 'smoothstep', animated: activePairs.has(`${source}|${target}`) || activePairs.has(`${target}|${source}`), className: activePairs.has(`${source}|${target}`) || activePairs.has(`${target}|${source}`) ? 'relationship-edge' : '', style: { strokeWidth: 2 } }));
-  return { nodes, edges, personNode };
-}
-
 interface Props { tree: FamilyTreeData; selectedPersonId: string | null; focusPersonId: string | null; highlightedPath: string[]; onSelect: (id: string) => void; onOpenSearch: () => void }
 
 export function TreeCanvas({ tree, selectedPersonId, focusPersonId, highlightedPath, onSelect, onOpenSearch }: Props) {
-  const built = useMemo(() => graph(tree, selectedPersonId, highlightedPath, onSelect), [tree, selectedPersonId, highlightedPath, onSelect]);
+  const built = useMemo(() => buildTreeGraph(tree, selectedPersonId, highlightedPath, onSelect), [tree, selectedPersonId, highlightedPath, onSelect]);
   const focusNode = focusPersonId ? built.personNode.get(focusPersonId) ?? null : null;
   const graphKey = `${built.nodes.map((node) => node.id).join('|')}:${tree.selectedRootFamilyUnitId ?? ''}`;
   return (

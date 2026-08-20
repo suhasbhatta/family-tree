@@ -68,7 +68,7 @@ export function Workspace({ identity }: { identity: UserIdentity }) {
     {selected && view === 'tree' && <PersonDrawer person={selected} tree={tree} isAdmin={isAdmin} onClose={() => setSelectedPersonId(null)} onEdit={() => setPersonEditor({ open: true, person: selected })} onFocus={choosePerson} />}
     <SearchPalette open={searchOpen} people={tree.people} onClose={() => setSearchOpen(false)} onChoose={choosePerson} />
     {isAdmin && <PersonEditor open={personEditor.open} person={personEditor.person} onClose={() => setPersonEditor({ open: false, person: null })} onSave={savePersonAction} onDelete={personEditor.person ? deletePersonAction : undefined} />}
-    {isAdmin && <FamilyUnitEditor open={unitEditor.open} unit={unitEditor.unit} people={tree.people} onClose={() => setUnitEditor({ open: false, unit: null })} onSave={saveUnitAction} onDelete={unitEditor.unit ? deleteUnitAction : undefined} />}
+    {isAdmin && <FamilyUnitEditor open={unitEditor.open} unit={unitEditor.unit} people={tree.people} familyUnits={tree.familyUnits} onClose={() => setUnitEditor({ open: false, unit: null })} onSave={saveUnitAction} onDelete={unitEditor.unit ? deleteUnitAction : undefined} />}
     <input ref={fileRef} hidden type="file" accept="application/json,.json" onChange={(event) => void handleImport(event, refresh, notify)} />
     {toast && <div className="toast"><Sparkles size={16} />{toast}</div>}
   </div>;

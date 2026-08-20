@@ -182,7 +182,10 @@ export async function saveFamilyUnit(id: string | null, value: FamilyUnitDraft):
   if (value.husbandId && value.husbandId === value.wifeId) throw new Error('Choose two different people as partners.');
   if (value.childrenIds.includes(value.husbandId ?? '') || value.childrenIds.includes(value.wifeId ?? '')) throw new Error('A parent cannot also be selected as a child in the same family.');
   if (new Set(members).size !== members.length) throw new Error('A child was selected more than once.');
-  const snapshots = await Promise.all(members.map((personId) => getDoc(doc(treeRef(), 'people', personId)))); if (snapshots.some((item) => !item.exists())) throw new Error('A selected person no longer exists.');
+  const [snapshots, familyUnits] = await Promise.all([Promise.all(members.map((personId) => getDoc(doc(treeRef(), 'people', personId)))), getDocs(collection(treeRef(), 'familyUnits'))]);
+  if (snapshots.some((item) => !item.exists())) throw new Error('A selected person no longer exists.');
+  const conflictingChild = value.childrenIds.find((childId) => familyUnits.docs.some((candidate) => candidate.id !== id && Array.isArray(candidate.data().childrenIds) && candidate.data().childrenIds.includes(childId)));
+  if (conflictingChild) throw new Error('A selected child already belongs to another parent family. Remove that relationship before assigning new parents.');
   const ref = doc(treeRef(), 'familyUnits', unitId); const current = await getDoc(ref); if (id && !current.exists()) throw new Error('Family unit not found.'); if (!id && current.exists()) throw new Error('Family unit already exists.');
   const batch = writeBatch(db); batch.set(ref, { husbandId: value.husbandId, wifeId: value.wifeId, anniversaryDate: value.anniversaryDate || null, childrenIds: [...new Set(value.childrenIds)], createdAt: current.data()?.createdAt ?? serverTimestamp(), updatedAt: serverTimestamp() }); batch.set(treeRef(), { updatedAt: serverTimestamp() }, { merge: true }); batch.set(auditRef(), audit(uid, id ? 'family_unit.updated' : 'family_unit.created', 'familyUnit', unitId)); await batch.commit(); return unitId;
 }
