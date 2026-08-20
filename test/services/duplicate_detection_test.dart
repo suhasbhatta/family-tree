@@ -24,8 +24,8 @@ void main() {
     });
 
     test('finds exact name match', () {
-      final candidate = Person(
-          id: 'new', name: 'Ramesh Kumar', gender: Gender.male);
+      final candidate =
+          Person(id: 'new', name: 'Ramesh Kumar', gender: Gender.male);
       final dupes =
           DuplicateDetectionService.findPotentialDuplicates(data, candidate);
       expect(dupes.isNotEmpty, true);
@@ -45,16 +45,16 @@ void main() {
     });
 
     test('no duplicate for different name', () {
-      final candidate = Person(
-          id: 'new', name: 'Vikram Singh', gender: Gender.male);
+      final candidate =
+          Person(id: 'new', name: 'Vikram Singh', gender: Gender.male);
       final dupes =
           DuplicateDetectionService.findPotentialDuplicates(data, candidate);
       expect(dupes, isEmpty);
     });
 
     test('excludeId skips that person', () {
-      final candidate = Person(
-          id: 'p1', name: 'Ramesh Kumar', gender: Gender.male);
+      final candidate =
+          Person(id: 'p1', name: 'Ramesh Kumar', gender: Gender.male);
       final dupes = DuplicateDetectionService.findPotentialDuplicates(
           data, candidate,
           excludeId: 'p1');

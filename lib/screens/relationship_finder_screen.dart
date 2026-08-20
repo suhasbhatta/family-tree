@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/person.dart';
+import '../theme/magnetic_colors.dart';
+import '../theme/glass.dart';
+import '../theme/magnetic_scaffold.dart';
 import '../utils/app_state.dart';
 import '../services/relationship_service.dart';
 
@@ -11,8 +14,7 @@ class RelationshipFinderScreen extends StatefulWidget {
       _RelationshipFinderScreenState();
 }
 
-class _RelationshipFinderScreenState
-    extends State<RelationshipFinderScreen> {
+class _RelationshipFinderScreenState extends State<RelationshipFinderScreen> {
   Person? _personA;
   Person? _personB;
   List<String>? _results;
@@ -22,16 +24,16 @@ class _RelationshipFinderScreenState
   Widget build(BuildContext context) {
     final data = AppState.instance.data;
 
-    return Scaffold(
+    return MagneticScaffold(
       appBar: AppBar(title: const Text('Find Relationship')),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 100, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
               'Select two people to find how they are related.',
-              style: TextStyle(color: Colors.grey),
+              style: TextStyle(color: MagneticColors.textSecondary),
             ),
             const SizedBox(height: 16),
             _personPicker('Person A', _personA, (p) {
@@ -42,7 +44,7 @@ class _RelationshipFinderScreenState
             }, data),
             const SizedBox(height: 12),
             const Center(
-              child: Icon(Icons.compare_arrows, color: Colors.grey),
+              child: Icon(Icons.compare_arrows, color: MagneticColors.cyan),
             ),
             const SizedBox(height: 12),
             _personPicker('Person B', _personB, (p) {
@@ -61,7 +63,7 @@ class _RelationshipFinderScreenState
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2, color: MagneticColors.void_),
                     )
                   : const Icon(Icons.search),
               label: Text(_searching ? 'Searching...' : 'Find Relationship'),
@@ -76,36 +78,30 @@ class _RelationshipFinderScreenState
 
   Widget _personPicker(String label, Person? selected,
       void Function(Person) onSelect, dynamic data) {
-    return Card(
+    final isMale = selected?.gender == Gender.male;
+    return GlassPanel(
+      padding: EdgeInsets.zero,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: selected == null
-              ? Colors.grey.shade200
-              : (selected.gender == Gender.male
-                  ? Colors.blue.shade100
-                  : Colors.pink.shade100),
-          child: Icon(
-            selected == null
-                ? Icons.person_outline
-                : (selected.gender == Gender.male ? Icons.male : Icons.female),
-            color: selected == null
-                ? Colors.grey
-                : (selected.gender == Gender.male
-                    ? Colors.blue.shade600
-                    : Colors.pink.shade400),
-          ),
-        ),
+        leading: selected == null
+            ? const CircleAvatar(
+                backgroundColor: MagneticColors.glassFill,
+                child:
+                    Icon(Icons.person_outline, color: MagneticColors.textMuted),
+              )
+            : GenderAvatar(isMale: isMale, radius: 18),
         title: Text(label,
-            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            style:
+                const TextStyle(fontSize: 12, color: MagneticColors.textMuted)),
         subtitle: Text(
           selected?.name ?? 'Tap to select...',
           style: TextStyle(
-            fontWeight:
-                selected != null ? FontWeight.w600 : FontWeight.normal,
-            color: selected != null ? null : Colors.grey,
+            fontWeight: selected != null ? FontWeight.w600 : FontWeight.normal,
+            color: selected != null
+                ? MagneticColors.textPrimary
+                : MagneticColors.textMuted,
           ),
         ),
-        trailing: const Icon(Icons.search),
+        trailing: const Icon(Icons.search, color: MagneticColors.textMuted),
         onTap: () => _selectPerson(data, onSelect),
       ),
     );
@@ -115,78 +111,75 @@ class _RelationshipFinderScreenState
     final results = _results!;
 
     if (results.isEmpty ||
-        (results.length == 1 && results.first == 'No known relationship found')) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.search_off, size: 40, color: Colors.grey),
-              SizedBox(height: 8),
-              Text('No relationship found between these two people.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey)),
-            ],
-          ),
+        (results.length == 1 &&
+            results.first == 'No known relationship found')) {
+      return const GlassPanel(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off, size: 40, color: MagneticColors.textMuted),
+            SizedBox(height: 8),
+            Text('No relationship found between these two people.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: MagneticColors.textSecondary)),
+          ],
         ),
       );
     }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.family_restroom, color: Colors.green),
-                const SizedBox(width: 8),
-                Text(
-                  '${results.length} relationship${results.length == 1 ? "" : "s"} found',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const Divider(),
-            Expanded(
-              child: ListView.separated(
-                itemCount: results.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text('${i + 1}',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color:
-                                    Theme.of(context).colorScheme.primary)),
+    return GlassPanel(
+      glowColor: MagneticColors.emerald,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hub_outlined, color: MagneticColors.emerald),
+              const SizedBox(width: 8),
+              Text(
+                '${results.length} relationship${results.length == 1 ? "" : "s"} found',
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: MagneticColors.textPrimary),
+              ),
+            ],
+          ),
+          const Divider(),
+          Expanded(
+            child: ListView.separated(
+              itemCount: results.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: MagneticColors.cyan.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: MagneticColors.cyan.withValues(alpha: 0.4)),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                          child: Text(results[i],
-                              style: const TextStyle(fontSize: 14))),
-                    ],
-                  ),
+                      child: Text('${i + 1}',
+                          style: const TextStyle(
+                              fontSize: 11, color: MagneticColors.cyan)),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: Text(results[i],
+                            style: const TextStyle(
+                                fontSize: 14,
+                                color: MagneticColors.textPrimary))),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -212,10 +205,12 @@ class _RelationshipFinderScreenState
       final service = RelationshipService(AppState.instance.data);
       final results =
           service.findRelationships(_personA!.id, _personB!.id, maxDepth: 10);
-      if (mounted) setState(() {
-        _results = results;
-        _searching = false;
-      });
+      if (mounted) {
+        setState(() {
+          _results = results;
+          _searching = false;
+        });
+      }
     });
   }
 }
@@ -249,8 +244,10 @@ class _PersonSearchDelegate extends SearchDelegate<Person?> {
       itemCount: filtered.length,
       itemBuilder: (_, i) {
         final p = filtered[i];
+        final isMale = p.gender == Gender.male;
         return ListTile(
-          leading: Icon(p.gender == Gender.male ? Icons.male : Icons.female),
+          leading: Icon(isMale ? Icons.male : Icons.female,
+              color: MagneticColors.genderColor(isMale)),
           title: Text(p.name),
           onTap: () => close(context, p),
         );

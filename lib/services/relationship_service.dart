@@ -45,23 +45,41 @@ class RelationshipService {
 
       if (hId != null && wId != null) {
         addEdge(GraphEdge(
-            fromId: hId, toId: wId, type: EdgeType.spouse, familyUnitId: unit.id));
+            fromId: hId,
+            toId: wId,
+            type: EdgeType.spouse,
+            familyUnitId: unit.id));
         addEdge(GraphEdge(
-            fromId: wId, toId: hId, type: EdgeType.spouse, familyUnitId: unit.id));
+            fromId: wId,
+            toId: hId,
+            type: EdgeType.spouse,
+            familyUnitId: unit.id));
       }
 
       for (final childId in unit.childrenIds) {
         if (hId != null) {
           addEdge(GraphEdge(
-              fromId: hId, toId: childId, type: EdgeType.child, familyUnitId: unit.id));
+              fromId: hId,
+              toId: childId,
+              type: EdgeType.child,
+              familyUnitId: unit.id));
           addEdge(GraphEdge(
-              fromId: childId, toId: hId, type: EdgeType.parent, familyUnitId: unit.id));
+              fromId: childId,
+              toId: hId,
+              type: EdgeType.parent,
+              familyUnitId: unit.id));
         }
         if (wId != null) {
           addEdge(GraphEdge(
-              fromId: wId, toId: childId, type: EdgeType.child, familyUnitId: unit.id));
+              fromId: wId,
+              toId: childId,
+              type: EdgeType.child,
+              familyUnitId: unit.id));
           addEdge(GraphEdge(
-              fromId: childId, toId: wId, type: EdgeType.parent, familyUnitId: unit.id));
+              fromId: childId,
+              toId: wId,
+              type: EdgeType.parent,
+              familyUnitId: unit.id));
         }
       }
     }
@@ -122,47 +140,55 @@ class RelationshipService {
     }).toList();
   }
 
-  // Returns all relationship descriptions between two people
-  List<String> findRelationships(String aId, String bId,
-      {int maxDepth = 10}) {
+  // Returns the single closest relationship description between two people
+  List<String> findRelationships(String aId, String bId, {int maxDepth = 10}) {
     if (aId == bId) return ['Same person'];
     final graph = buildGraph();
-    final paths = _findAllPaths(graph, aId, bId, maxDepth);
-    final descriptions = <String>{};
-    for (final path in paths) {
-      final desc = _describePathFrom(aId, path);
-      if (desc != null) descriptions.add(desc);
-    }
-    if (descriptions.isEmpty) return ['No known relationship found'];
-    final sorted = descriptions.toList()
-      ..sort((a, b) => a.length.compareTo(b.length));
-    return sorted;
+    final path = _findShortestPath(graph, aId, bId, maxDepth);
+    if (path == null) return ['No known relationship found'];
+    final desc = _describePathFrom(aId, path);
+    return [desc ?? 'No known relationship found'];
   }
 
-  List<List<GraphEdge>> _findAllPaths(
-      Map<String, List<GraphEdge>> graph, String start, String end, int maxDepth) {
-    final results = <List<GraphEdge>>[];
-    final visited = <String>{};
+  // BFS shortest path — the shortest hop count is always the most direct
+  // (and correct) relationship; longer detours through spouse edges would
+  // otherwise produce spurious "step-" relations for people who are
+  // already directly related.
+  List<GraphEdge>? _findShortestPath(Map<String, List<GraphEdge>> graph,
+      String start, String end, int maxDepth) {
+    if (start == end) return [];
+    final queue = <String>[start];
+    final cameFrom = <String, GraphEdge>{};
+    final visited = <String>{start};
 
-    void dfs(String current, List<GraphEdge> path) {
-      if (path.length > maxDepth) return;
-      if (current == end) {
-        results.add(List.from(path));
-        return;
-      }
-      visited.add(current);
+    while (queue.isNotEmpty) {
+      final current = queue.removeAt(0);
+      final path = _reconstructPath(cameFrom, start, current);
+      if (path.length >= maxDepth) continue;
       for (final edge in graph[current] ?? []) {
-        if (!visited.contains(edge.toId)) {
-          path.add(edge);
-          dfs(edge.toId, path);
-          path.removeLast();
+        if (visited.contains(edge.toId)) continue;
+        visited.add(edge.toId);
+        cameFrom[edge.toId] = edge;
+        if (edge.toId == end) {
+          return _reconstructPath(cameFrom, start, end);
         }
+        queue.add(edge.toId);
       }
-      visited.remove(current);
     }
+    return null;
+  }
 
-    dfs(start, []);
-    return results;
+  List<GraphEdge> _reconstructPath(
+      Map<String, GraphEdge> cameFrom, String start, String target) {
+    final path = <GraphEdge>[];
+    var current = target;
+    while (current != start) {
+      final edge = cameFrom[current];
+      if (edge == null) break;
+      path.add(edge);
+      current = edge.fromId;
+    }
+    return path.reversed.toList();
   }
 
   String? _describePathFrom(String startId, List<GraphEdge> path) {
@@ -176,7 +202,10 @@ class RelationshipService {
     final label = _pathToLabel(startId, path);
     if (label == null) return null;
 
-    return '${startPerson.name} is $label of ${endPerson.name}';
+    // `label` describes the end person's relationship to the start person
+    // (e.g. "father" means end is the start's father), so the end person
+    // goes first in the sentence.
+    return '${endPerson.name} is $label of ${startPerson.name}';
   }
 
   String? _pathToLabel(String startId, List<GraphEdge> edges) {
@@ -216,10 +245,6 @@ class RelationshipService {
       if (e1.type == EdgeType.parent && e2.type == EdgeType.child) {
         return _siblingLabel(end.gender);
       }
-      // uncle/aunt: parent → sibling
-      if (e1.type == EdgeType.parent && e2.type == EdgeType.spouse) {
-        return 'step-${_parentLabel(end.gender)}';
-      }
       // spouse → child = step-child
       if (e1.type == EdgeType.spouse && e2.type == EdgeType.child) {
         return 'step-${_childLabel(end.gender)}';
@@ -245,26 +270,29 @@ class RelationshipService {
       final end = _data.people[e3.toId];
       if (end == null) return null;
 
-      // parent → parent → child = uncle/aunt
+      // parent → child → child = nephew/niece (up to parent, down to
+      // sibling, down to sibling's child)
       if (e1.type == EdgeType.parent &&
           e2.type == EdgeType.child &&
           e3.type == EdgeType.child) {
-        final mid2 = _data.people[e2.toId];
-        if (mid2 != null) return _uncleAuntLabel(mid2.gender);
+        return _nephewNieceLabel(end.gender);
       }
-      // child → child → parent = nephew/niece relationship reversed
+      // parent → parent → child = uncle/aunt (up to grandparent, down to
+      // parent's sibling)
       if (e1.type == EdgeType.parent &&
           e2.type == EdgeType.parent &&
           e3.type == EdgeType.child) {
-        return _nephewNieceLabel(end.gender);
+        return _uncleAuntLabel(end.gender);
       }
       // grandchild via child→child
-      if (e1.type == EdgeType.child && e2.type == EdgeType.child &&
+      if (e1.type == EdgeType.child &&
+          e2.type == EdgeType.child &&
           e3.type == EdgeType.child) {
         return 'great-grandchild';
       }
       // grandparent
-      if (e1.type == EdgeType.parent && e2.type == EdgeType.parent &&
+      if (e1.type == EdgeType.parent &&
+          e2.type == EdgeType.parent &&
           e3.type == EdgeType.parent) {
         return _greatGrandparentLabel(end.gender);
       }
@@ -281,7 +309,8 @@ class RelationshipService {
         return _siblingInLawLabel(end.gender);
       }
       // spouse's child
-      if (e1.type == EdgeType.child && e2.type == EdgeType.spouse &&
+      if (e1.type == EdgeType.child &&
+          e2.type == EdgeType.spouse &&
           e3.type == EdgeType.parent) {
         return _parentInLawLabel(end.gender);
       }
@@ -296,13 +325,17 @@ class RelationshipService {
       if (end == null) return null;
 
       // great-grandparent
-      if (e1.type == EdgeType.parent && e2.type == EdgeType.parent &&
-          e3.type == EdgeType.parent && e4.type == EdgeType.parent) {
+      if (e1.type == EdgeType.parent &&
+          e2.type == EdgeType.parent &&
+          e3.type == EdgeType.parent &&
+          e4.type == EdgeType.parent) {
         return _greatGrandparentLabel(end.gender);
       }
       // first cousin
-      if (e1.type == EdgeType.parent && e2.type == EdgeType.parent &&
-          e3.type == EdgeType.child && e4.type == EdgeType.child) {
+      if (e1.type == EdgeType.parent &&
+          e2.type == EdgeType.parent &&
+          e3.type == EdgeType.child &&
+          e4.type == EdgeType.child) {
         return 'first cousin';
       }
     }

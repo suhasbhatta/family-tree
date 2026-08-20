@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/person.dart';
+import '../theme/magnetic_colors.dart';
+import '../theme/glass.dart';
+import '../theme/magnetic_scaffold.dart';
 import '../utils/app_state.dart';
 import 'person_details_screen.dart';
 
@@ -46,14 +49,16 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return MagneticScaffold(
       appBar: AppBar(
         title: TextField(
           controller: _ctrl,
           autofocus: true,
+          style: const TextStyle(color: MagneticColors.textPrimary),
           decoration: const InputDecoration(
             hintText: 'Search by name, contact, or location...',
             border: InputBorder.none,
+            filled: false,
           ),
         ),
         actions: [
@@ -65,39 +70,40 @@ class _SearchScreenState extends State<SearchScreen> {
                 }),
         ],
       ),
-      body: _results.isEmpty
-          ? const Center(child: Text('No results found'))
-          : ListView.builder(
-              itemCount: _results.length,
-              itemBuilder: (_, i) {
-                final p = _results[i];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: p.gender == Gender.male
-                        ? Colors.blue.shade100
-                        : Colors.pink.shade100,
-                    child: Icon(
-                      p.gender == Gender.male ? Icons.male : Icons.female,
-                      color: p.gender == Gender.male
-                          ? Colors.blue.shade600
-                          : Colors.pink.shade400,
-                      size: 18,
+      body: Padding(
+        padding: const EdgeInsets.only(top: 90),
+        child: _results.isEmpty
+            ? const Center(
+                child: Text('No results found',
+                    style: TextStyle(color: MagneticColors.textSecondary)))
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                itemCount: _results.length,
+                itemBuilder: (_, i) {
+                  final p = _results[i];
+                  final isMale = p.gender == Gender.male;
+                  return GlassPanel(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: EdgeInsets.zero,
+                    child: ListTile(
+                      leading: GenderAvatar(isMale: isMale, radius: 16),
+                      title: Text(p.name),
+                      subtitle:
+                          Text(p.currentPlaceOfResidence ?? p.gender.name),
+                      trailing: p.isAlive
+                          ? null
+                          : const Icon(Icons.sentiment_dissatisfied,
+                              color: MagneticColors.textMuted, size: 16),
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  PersonDetailsScreen(personId: p.id))),
                     ),
-                  ),
-                  title: Text(p.name),
-                  subtitle: Text(p.currentPlaceOfResidence ?? p.gender.name),
-                  trailing: p.isAlive
-                      ? null
-                      : const Icon(Icons.sentiment_dissatisfied,
-                          color: Colors.grey, size: 16),
-                  onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) =>
-                              PersonDetailsScreen(personId: p.id))),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+      ),
     );
   }
 }

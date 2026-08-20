@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-kannada: 'Noto Sans Kannada', 'Inter', sans-serif;
+
+  --color-void: #09090b;
+  --color-void-soft: #0d0d12;
+  --color-glass: rgba(255, 255, 255, 0.04);
+  --color-glass-border: rgba(255, 255, 255, 0.09);
+
+  --color-cyan-glow: #22d3ee;
+  --color-magenta-glow: #e879f9;
+  --color-emerald-glow: #34d399;
+  --color-amber-glow: #fbbf24;
+
+  --animate-pulse-slow: pulse-slow 3.5s ease-in-out infinite;
+  --animate-drift: drift 60s linear infinite;
+
+  @keyframes pulse-slow {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @keyframes drift {
+    0% {
+      transform: translate(0, 0);
+    }
+    100% {
+      transform: translate(-120px, -80px);
+    }
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--color-void);
+  color: #e4e4e7;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.font-kn {
+  font-family: var(--font-kannada);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* utility: glass panel base */
+.glass {
+  background: var(--color-glass);
+  border: 1px solid var(--color-glass-border);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}

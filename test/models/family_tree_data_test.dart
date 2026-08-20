@@ -25,8 +25,8 @@ void main() {
           Person(id: 'p1', name: 'Alice', gender: Gender.female));
       data.addOrUpdatePerson(
           Person(id: 'p2', name: 'Bob', gender: Gender.male));
-      data.addOrUpdateFamilyUnit(FamilyUnit(
-          id: 'f1', husbandId: 'p2', wifeId: 'p1', childrenIds: []));
+      data.addOrUpdateFamilyUnit(
+          FamilyUnit(id: 'f1', husbandId: 'p2', wifeId: 'p1', childrenIds: []));
 
       data.removePerson('p1');
       expect(data.people.containsKey('p1'), false);

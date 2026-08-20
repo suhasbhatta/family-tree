@@ -33,8 +33,7 @@ class FamilyUnit {
       'id': id,
       'husbandId': husbandId,
       'wifeId': wifeId,
-      'anniversaryDate':
-          anniversaryDate?.toIso8601String().split('T').first,
+      'anniversaryDate': anniversaryDate?.toIso8601String().split('T').first,
       'childrenIds': childrenIds,
     };
   }

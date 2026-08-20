@@ -28,6 +28,7 @@ String genderToString(Gender g) {
 
 class Person {
   final String id;
+  int version;
   String name;
   Gender gender;
   DateTime? dateOfBirth;
@@ -38,6 +39,7 @@ class Person {
 
   Person({
     required this.id,
+    this.version = 0,
     required this.name,
     this.gender = Gender.unknown,
     this.dateOfBirth,
@@ -50,6 +52,7 @@ class Person {
   factory Person.fromJson(Map<String, dynamic> json) {
     return Person(
       id: json['id'] as String,
+      version: json['version'] as int? ?? 0,
       name: json['name'] as String,
       gender: genderFromString(json['gender'] as String? ?? 'unknown'),
       dateOfBirth: json['dateOfBirth'] != null
@@ -67,6 +70,7 @@ class Person {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'version': version,
       'name': name,
       'gender': genderToString(gender),
       'dateOfBirth': dateOfBirth?.toIso8601String().split('T').first,
@@ -79,6 +83,7 @@ class Person {
 
   Person copyWith({
     String? id,
+    int? version,
     String? name,
     Gender? gender,
     DateTime? dateOfBirth,
@@ -93,12 +98,14 @@ class Person {
   }) {
     return Person(
       id: id ?? this.id,
+      version: version ?? this.version,
       name: name ?? this.name,
       gender: gender ?? this.gender,
       dateOfBirth: clearDateOfBirth ? null : (dateOfBirth ?? this.dateOfBirth),
       dateOfDeath: clearDateOfDeath ? null : (dateOfDeath ?? this.dateOfDeath),
       isAlive: isAlive ?? this.isAlive,
-      contactNumber: clearContact ? null : (contactNumber ?? this.contactNumber),
+      contactNumber:
+          clearContact ? null : (contactNumber ?? this.contactNumber),
       currentPlaceOfResidence: clearResidence
           ? null
           : (currentPlaceOfResidence ?? this.currentPlaceOfResidence),

@@ -67,8 +67,8 @@ class FamilyTreeData {
 
   void touch() => updatedAt = DateTime.now();
 
-  List<Person> get peopleList => people.values.toList()
-    ..sort((a, b) => a.name.compareTo(b.name));
+  List<Person> get peopleList =>
+      people.values.toList()..sort((a, b) => a.name.compareTo(b.name));
 
   List<FamilyUnit> get familyUnitList => familyUnits.values.toList();
 

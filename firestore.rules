@@ -1,0 +1,50 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSoleAdmin(treeId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/adminAccess/sole)
+        && get(/databases/$(database)/documents/adminAccess/sole).data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/adminAccess/sole).data.status == 'active'
+        && get(/databases/$(database)/documents/adminAccess/sole).data.treeId == treeId;
+    }
+
+    match /trees/{treeId} {
+      allow read: if isSoleAdmin(treeId);
+      allow write: if false;
+
+      match /people/{personId} {
+        allow read: if isSoleAdmin(treeId);
+        allow write: if false;
+      }
+
+      match /familyUnits/{unitId} {
+        allow read: if isSoleAdmin(treeId);
+        allow write: if false;
+      }
+
+      match /personPrivate/{personId} {
+        allow read: if isSoleAdmin(treeId);
+        allow write: if false;
+      }
+    }
+
+    match /adminAccess/{accessId} {
+      allow read: if accessId == 'sole'
+        && resource.data.treeId is string
+        && isSoleAdmin(resource.data.treeId);
+      allow write: if false;
+    }
+
+    match /auditEvents/{eventId} {
+      allow read: if resource.data.treeId is string
+        && isSoleAdmin(resource.data.treeId);
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

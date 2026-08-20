@@ -62,7 +62,8 @@ void main() {
 
     test('finds direct spouse relationship', () {
       final rels = service.findRelationships('f', 'm');
-      expect(rels.any((r) => r.contains('wife') || r.contains('husband')), true);
+      expect(
+          rels.any((r) => r.contains('wife') || r.contains('husband')), true);
     });
 
     test('finds parent-child relationship', () {
@@ -74,13 +75,17 @@ void main() {
       final rels = service.findRelationships('gf', 'c');
       expect(
           rels.any((r) =>
-              r.contains('grandfather') || r.contains('grandchild')),
+              r.contains('grandfather') ||
+              r.contains('grandchild') ||
+              r.contains('grandson') ||
+              r.contains('granddaughter')),
           true);
     });
 
     test('finds sibling relationship', () {
       final rels = service.findRelationships('f', 'u');
-      expect(rels.any((r) => r.contains('brother') || r.contains('sibling')), true);
+      expect(rels.any((r) => r.contains('brother') || r.contains('sibling')),
+          true);
     });
 
     test('multiple wives - husband appears in multiple family units', () {
@@ -92,7 +97,8 @@ void main() {
     test('same person as child and husband', () {
       // Suresh is child in fu1 and husband in fu2/fu3
       final fus = service.getFamilyUnitsForPerson('f');
-      expect(fus.length, 3); // fu1 (as child), fu2 (as husband), fu3 (as husband)
+      expect(
+          fus.length, 3); // fu1 (as child), fu2 (as husband), fu3 (as husband)
     });
 
     test('uncle relationship via path', () {

@@ -3,7 +3,8 @@ import '../models/person.dart';
 
 class DuplicateDetectionService {
   static List<Person> findPotentialDuplicates(
-      FamilyTreeData data, Person candidate, {String? excludeId}) {
+      FamilyTreeData data, Person candidate,
+      {String? excludeId}) {
     return data.people.values.where((p) {
       if (p.id == candidate.id) return false;
       if (excludeId != null && p.id == excludeId) return false;
@@ -52,8 +53,12 @@ class DuplicateDetectionService {
     if (t.isEmpty) return s.length;
     final d = List.generate(
         s.length + 1, (i) => List.generate(t.length + 1, (j) => 0));
-    for (int i = 0; i <= s.length; i++) d[i][0] = i;
-    for (int j = 0; j <= t.length; j++) d[0][j] = j;
+    for (int i = 0; i <= s.length; i++) {
+      d[i][0] = i;
+    }
+    for (int j = 0; j <= t.length; j++) {
+      d[0][j] = j;
+    }
     for (int i = 1; i <= s.length; i++) {
       for (int j = 1; j <= t.length; j++) {
         final cost = s[i - 1] == t[j - 1] ? 0 : 1;

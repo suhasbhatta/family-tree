@@ -41,10 +41,7 @@ void main() {
 
     test('allMemberIds includes all non-null members', () {
       final fu = FamilyUnit(
-          id: 'f1',
-          husbandId: 'p1',
-          wifeId: 'p2',
-          childrenIds: ['p3', 'p4']);
+          id: 'f1', husbandId: 'p1', wifeId: 'p2', childrenIds: ['p3', 'p4']);
       expect(fu.allMemberIds, containsAll(['p1', 'p2', 'p3', 'p4']));
     });
 

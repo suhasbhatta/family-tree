@@ -26,8 +26,8 @@ android {
         applicationId "com.example.family_tree"
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion flutter.targetSdkVersion
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
+        versionCode flutter.versionCode.toInteger()
+        versionName flutter.versionName
     }
 
     buildTypes {

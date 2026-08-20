@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:file_saver/file_saver.dart';
+
 import '../models/family_tree_data.dart';
-import 'local_storage_service.dart';
+import '../utils/app_state.dart';
 
 enum ImportMode { replace, merge }
 
@@ -14,19 +15,16 @@ class ImportExportService {
   static ImportExportService get instance =>
       _instance ??= ImportExportService._();
 
-  Future<String> exportToFile() async {
-    final json = await LocalStorageService.instance.exportJson();
-    final dir = await getTemporaryDirectory();
-    final filePath = '${dir.path}/family_tree_export.json';
-    await File(filePath).writeAsString(json);
-    return filePath;
-  }
+  static const maxImportBytes = 512 * 1024;
 
   Future<void> shareExport() async {
-    final filePath = await exportToFile();
-    await Share.shareXFiles(
-      [XFile(filePath, mimeType: 'application/json')],
-      subject: 'Family Tree Export',
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(AppState.instance.data.toJson());
+    await FileSaver.instance.saveFile(
+      name: 'family_tree_export',
+      bytes: Uint8List.fromList(utf8.encode(json)),
+      fileExtension: 'json',
+      mimeType: MimeType.json,
     );
   }
 
@@ -34,54 +32,60 @@ class ImportExportService {
       pickAndValidateImport() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['json'],
+      allowedExtensions: const ['json'],
       allowMultiple: false,
+      withData: true,
     );
-
     if (result == null || result.files.isEmpty) {
       return (success: false, error: 'No file selected', preview: null);
     }
-
-    final path = result.files.first.path;
-    if (path == null) {
-      return (success: false, error: 'Could not read file path', preview: null);
+    final bytes = result.files.single.bytes;
+    if (bytes == null) {
+      return (
+        success: false,
+        error: 'Could not read the selected file',
+        preview: null
+      );
     }
-
+    if (bytes.length > maxImportBytes) {
+      return (
+        success: false,
+        error: 'Import files must be 512 KB or smaller',
+        preview: null,
+      );
+    }
     try {
-      final content = await File(path).readAsString();
-      final decoded = jsonDecode(content);
-      if (decoded is! Map<String, dynamic>) {
-        return (success: false, error: 'Invalid JSON format', preview: null);
-      }
-      if (!decoded.containsKey('people') || !decoded.containsKey('familyUnits')) {
+      final decoded = jsonDecode(utf8.decode(bytes));
+      if (decoded is! Map<String, dynamic> ||
+          decoded['people'] is! List ||
+          decoded['familyUnits'] is! List) {
         return (
           success: false,
-          error: 'JSON missing required fields (people, familyUnits)',
-          preview: null
+          error: 'The file is not a valid family-tree export',
+          preview: null,
         );
       }
       final preview = FamilyTreeData.fromJson(decoded);
+      if (preview.people.length > 300 || preview.familyUnits.length > 150) {
+        return (
+          success: false,
+          error: 'The import exceeds the supported tree size',
+          preview: null,
+        );
+      }
       return (success: true, error: null, preview: preview);
-    } catch (e) {
-      return (success: false, error: 'Parse error: $e', preview: null);
+    } catch (_) {
+      return (
+        success: false,
+        error: 'The selected JSON file could not be parsed',
+        preview: null,
+      );
     }
   }
 
-  Future<void> importFromPath(String path, ImportMode mode) async {
-    final content = await File(path).readAsString();
-    await LocalStorageService.instance.saveRaw(
-      content,
-      merge: mode == ImportMode.merge,
-    );
-  }
-
-  Future<void> importData(FamilyTreeData imported, ImportMode mode) async {
-    final storage = LocalStorageService.instance;
-    if (mode == ImportMode.replace) {
-      await storage.save(imported);
-    } else {
-      final jsonStr = jsonEncode(imported.toJson());
-      await storage.saveRaw(jsonStr, merge: true);
-    }
-  }
+  Future<void> importData(FamilyTreeData imported, ImportMode mode) =>
+      AppState.instance.importTree(
+        imported,
+        replace: mode == ImportMode.replace,
+      );
 }

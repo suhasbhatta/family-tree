@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/family_unit.dart';
 import '../models/family_tree_data.dart';
+import '../theme/magnetic_colors.dart';
+import '../theme/glass.dart';
 import '../utils/date_utils.dart' as du;
 
 class FamilyUnitCard extends StatelessWidget {
@@ -24,83 +26,84 @@ class FamilyUnitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final husband = unit.husbandId != null ? data.people[unit.husbandId!] : null;
+    final husband =
+        unit.husbandId != null ? data.people[unit.husbandId!] : null;
     final wife = unit.wifeId != null ? data.people[unit.wifeId!] : null;
     final isRoot = data.selectedRootFamilyUnitId == unit.id;
 
-    return Card(
+    return GlassPanel(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: isRoot
-            ? BorderSide(color: theme.colorScheme.primary, width: 2)
-            : BorderSide.none,
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.family_restroom,
-                      color: theme.colorScheme.primary, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _coupleLabel(husband?.name, wife?.name),
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  if (isRoot)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
+      padding: EdgeInsets.zero,
+      borderRadius: BorderRadius.circular(16),
+      glowColor: isRoot ? MagneticColors.emerald : null,
+      borderColor: isRoot
+          ? MagneticColors.emerald.withValues(alpha: 0.5)
+          : MagneticColors.glassBorder,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.link,
+                        color: MagneticColors.cyan, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _coupleLabel(husband?.name, wife?.name),
+                        style: theme.textTheme.titleMedium,
                       ),
-                      child: Text('root',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.primary)),
                     ),
-                  PopupMenuButton<String>(
-                    onSelected: (v) {
-                      if (v == 'edit') onEdit?.call();
-                      if (v == 'delete') onDelete?.call();
-                      if (v == 'root') onSetRoot?.call();
-                    },
-                    itemBuilder: (_) => [
-                      if (onEdit != null)
-                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      if (onSetRoot != null && !isRoot)
-                        const PopupMenuItem(
-                            value: 'root', child: Text('Set as root')),
-                      if (onDelete != null)
-                        const PopupMenuItem(
-                            value: 'delete', child: Text('Delete')),
+                    if (isRoot) ...[
+                      const GlowBadge(
+                          text: 'ROOT', color: MagneticColors.emerald),
+                      const SizedBox(width: 4),
                     ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 12,
-                children: [
-                  if (unit.anniversaryDate != null)
-                    _chip(Icons.favorite,
-                        'Married ${du.formatDate(unit.anniversaryDate)}',
-                        Colors.red.shade300),
-                  _chip(Icons.child_care,
-                      '${unit.childrenIds.length} child${unit.childrenIds.length == 1 ? "" : "ren"}',
-                      Colors.green.shade400),
-                ],
-              ),
-            ],
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert,
+                          color: MagneticColors.textMuted, size: 20),
+                      onSelected: (v) {
+                        if (v == 'edit') onEdit?.call();
+                        if (v == 'delete') onDelete?.call();
+                        if (v == 'root') onSetRoot?.call();
+                      },
+                      itemBuilder: (_) => [
+                        if (onEdit != null)
+                          const PopupMenuItem(
+                              value: 'edit', child: Text('Edit')),
+                        if (onSetRoot != null && !isRoot)
+                          const PopupMenuItem(
+                              value: 'root', child: Text('Set as root')),
+                        if (onDelete != null)
+                          const PopupMenuItem(
+                              value: 'delete', child: Text('Delete')),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 12,
+                  children: [
+                    if (unit.anniversaryDate != null)
+                      _chip(
+                          Icons.favorite,
+                          'Married ${du.formatDate(unit.anniversaryDate)}',
+                          MagneticColors.rose),
+                    _chip(
+                        Icons.child_care,
+                        '${unit.childrenIds.length} child${unit.childrenIds.length == 1 ? "" : "ren"}',
+                        MagneticColors.emerald),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -120,7 +123,9 @@ class FamilyUnitCard extends StatelessWidget {
       children: [
         Icon(icon, size: 14, color: color),
         const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 12, color: MagneticColors.textSecondary)),
       ],
     );
   }

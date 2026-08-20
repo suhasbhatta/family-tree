@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/family_unit.dart';
 import '../models/person.dart';
+import '../theme/magnetic_colors.dart';
+import '../theme/glass.dart';
+import '../theme/magnetic_scaffold.dart';
 import '../utils/app_state.dart';
 import '../utils/date_utils.dart' as du;
 import 'add_edit_person_screen.dart';
@@ -41,7 +44,7 @@ class _AddEditFamilyUnitScreenState extends State<AddEditFamilyUnitScreen> {
       animation: AppState.instance,
       builder: (context, _) {
         final data = AppState.instance.data;
-        return Scaffold(
+        return MagneticScaffold(
           appBar: AppBar(
             title: Text(_isEdit ? 'Edit Family Unit' : 'Add Family Unit'),
             actions: [
@@ -49,14 +52,13 @@ class _AddEditFamilyUnitScreenState extends State<AddEditFamilyUnitScreen> {
             ],
           ),
           body: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 100, 16, 16),
             children: [
               _sectionHeader('Couple'),
               _personSelector(
                 label: 'Husband',
                 selectedId: _husbandId,
-                icon: Icons.male,
-                iconColor: Colors.blue.shade600,
+                isMale: true,
                 onSelect: (id) => setState(() => _husbandId = id),
                 onClear: () => setState(() => _husbandId = null),
                 data: data,
@@ -65,36 +67,35 @@ class _AddEditFamilyUnitScreenState extends State<AddEditFamilyUnitScreen> {
               _personSelector(
                 label: 'Wife',
                 selectedId: _wifeId,
-                icon: Icons.female,
-                iconColor: Colors.pink.shade400,
+                isMale: false,
                 onSelect: (id) => setState(() => _wifeId = id),
                 onClear: () => setState(() => _wifeId = null),
                 data: data,
               ),
               const SizedBox(height: 16),
               _sectionHeader('Anniversary'),
-              _datePicker(
-                  'Anniversary Date',
-                  _anniversary,
+              _datePicker('Anniversary Date', _anniversary,
                   (d) => setState(() => _anniversary = d)),
               const SizedBox(height: 16),
               _sectionHeader('Children (${_childrenIds.length})'),
               ..._childrenIds.map((cId) {
                 final p = data.people[cId];
-                return ListTile(
-                  dense: true,
-                  leading: Icon(
-                    p?.gender == Gender.male ? Icons.male : Icons.female,
-                    color: p?.gender == Gender.male
-                        ? Colors.blue.shade600
-                        : Colors.pink.shade400,
-                  ),
-                  title: Text(p?.name ?? '(unknown)'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.remove_circle_outline,
-                        color: Colors.red),
-                    onPressed: () =>
-                        setState(() => _childrenIds.remove(cId)),
+                final isMale = p?.gender == Gender.male;
+                return GlassPanel(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: EdgeInsets.zero,
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(
+                      isMale ? Icons.male : Icons.female,
+                      color: MagneticColors.genderColor(isMale),
+                    ),
+                    title: Text(p?.name ?? '(unknown)'),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.remove_circle_outline,
+                          color: MagneticColors.rose),
+                      onPressed: () => setState(() => _childrenIds.remove(cId)),
+                    ),
                   ),
                 );
               }),
@@ -137,33 +138,32 @@ class _AddEditFamilyUnitScreenState extends State<AddEditFamilyUnitScreen> {
           style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 16,
-              color: Colors.black87)),
+              color: MagneticColors.textPrimary)),
     );
   }
 
   Widget _personSelector({
     required String label,
     required String? selectedId,
-    required IconData icon,
-    required Color iconColor,
+    required bool isMale,
     required void Function(String) onSelect,
     required VoidCallback onClear,
     required dynamic data,
   }) {
     final person = selectedId != null ? data.people[selectedId] : null;
+    final color = MagneticColors.genderColor(isMale);
 
-    return Card(
+    return GlassPanel(
+      padding: EdgeInsets.zero,
       child: ListTile(
-        leading: Icon(icon, color: iconColor),
+        leading: Icon(isMale ? Icons.male : Icons.female, color: color),
         title: Text(label),
         subtitle: Text(person?.name ?? 'Not selected'),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selectedId != null)
-              IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: onClear),
+              IconButton(icon: const Icon(Icons.clear), onPressed: onClear),
             IconButton(
               icon: const Icon(Icons.search),
               onPressed: () => _selectPerson(data, label, onSelect),
@@ -190,17 +190,17 @@ class _AddEditFamilyUnitScreenState extends State<AddEditFamilyUnitScreen> {
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: const Icon(Icons.calendar_today_outlined),
-          border: const OutlineInputBorder(),
           suffixIcon: current != null
               ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () => onPick(null))
+                  icon: const Icon(Icons.clear), onPressed: () => onPick(null))
               : null,
         ),
         child: Text(
           current != null ? du.formatDate(current) : 'Tap to select (optional)',
-          style:
-              TextStyle(color: current != null ? null : Colors.grey.shade500),
+          style: TextStyle(
+              color: current != null
+                  ? MagneticColors.textPrimary
+                  : MagneticColors.textMuted),
         ),
       ),
     );
@@ -234,8 +234,7 @@ class _AddEditFamilyUnitScreenState extends State<AddEditFamilyUnitScreen> {
   }
 
   Future<void> _createNewChild() async {
-    await Navigator.push(
-        context,
+    await Navigator.push(context,
         MaterialPageRoute(builder: (_) => const AddEditPersonScreen()));
     // Pick the most recently added person
     final data = AppState.instance.data;
@@ -247,9 +246,8 @@ class _AddEditFamilyUnitScreenState extends State<AddEditFamilyUnitScreen> {
 
   Future<void> _save() async {
     if (_husbandId == null && _wifeId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Please select at least a husband or wife')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please select at least a husband or wife')));
       return;
     }
 
@@ -284,8 +282,7 @@ class _PersonSearchDelegate extends SearchDelegate<Person?> {
 
   @override
   List<Widget> buildActions(BuildContext context) => [
-        IconButton(
-            icon: const Icon(Icons.clear), onPressed: () => query = ''),
+        IconButton(icon: const Icon(Icons.clear), onPressed: () => query = ''),
       ];
 
   @override
@@ -308,9 +305,11 @@ class _PersonSearchDelegate extends SearchDelegate<Person?> {
       itemCount: filtered.length,
       itemBuilder: (_, i) {
         final p = filtered[i];
+        final isMale = p.gender == Gender.male;
         return ListTile(
           leading: Icon(
-            p.gender == Gender.male ? Icons.male : Icons.female,
+            isMale ? Icons.male : Icons.female,
+            color: MagneticColors.genderColor(isMale),
           ),
           title: Text(p.name),
           subtitle: Text(p.gender.name),

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/person.dart';
+import '../theme/magnetic_colors.dart';
+import '../theme/glass.dart';
+import '../theme/magnetic_scaffold.dart';
 import '../utils/app_state.dart';
 import '../utils/date_utils.dart' as du;
 import '../services/duplicate_detection_service.dart';
@@ -51,7 +54,7 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return MagneticScaffold(
       appBar: AppBar(
         title: Text(_isEdit ? 'Edit Person' : 'Add Person'),
         actions: [
@@ -64,18 +67,21 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 100, 16, 16),
           children: [
             TextFormField(
               controller: _nameCtrl,
+              style: const TextStyle(color: MagneticColors.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Name *',
                 prefixIcon: Icon(Icons.person_outline),
-                border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.words,
-              validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Name is required' : null,
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'Name is required'
+                  : v.trim().length > 100
+                      ? 'Name must be 100 characters or fewer'
+                      : null,
             ),
             const SizedBox(height: 16),
             _genderSelector(),
@@ -90,22 +96,24 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
             if (!_isAlive) const SizedBox(height: 16),
             TextFormField(
               controller: _contactCtrl,
+              style: const TextStyle(color: MagneticColors.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Contact Number',
                 prefixIcon: Icon(Icons.phone_outlined),
-                border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.phone,
+              maxLength: 20,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _residenceCtrl,
+              style: const TextStyle(color: MagneticColors.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Current Place of Residence',
                 prefixIcon: Icon(Icons.location_on_outlined),
-                border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.sentences,
+              maxLength: 200,
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
@@ -123,12 +131,19 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Gender', style: TextStyle(color: Colors.grey, fontSize: 12)),
-        const SizedBox(height: 4),
+        const Text('Gender',
+            style: TextStyle(color: MagneticColors.textMuted, fontSize: 12)),
+        const SizedBox(height: 6),
         SegmentedButton<Gender>(
           segments: const [
-            ButtonSegment(value: Gender.male, label: Text('Male'), icon: Icon(Icons.male)),
-            ButtonSegment(value: Gender.female, label: Text('Female'), icon: Icon(Icons.female)),
+            ButtonSegment(
+                value: Gender.male,
+                label: Text('Male'),
+                icon: Icon(Icons.male)),
+            ButtonSegment(
+                value: Gender.female,
+                label: Text('Female'),
+                icon: Icon(Icons.female)),
             ButtonSegment(value: Gender.other, label: Text('Other')),
             ButtonSegment(value: Gender.unknown, label: Text('Unknown')),
           ],
@@ -141,7 +156,8 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
   }
 
   Widget _aliveToggle() {
-    return Card(
+    return GlassPanel(
+      padding: EdgeInsets.zero,
       child: SwitchListTile(
         title: const Text('Currently Alive'),
         subtitle: Text(_isAlive ? 'Person is alive' : 'Person is deceased'),
@@ -173,7 +189,6 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: const Icon(Icons.calendar_today_outlined),
-          border: const OutlineInputBorder(),
           suffixIcon: current != null
               ? IconButton(
                   icon: const Icon(Icons.clear),
@@ -184,7 +199,9 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
         child: Text(
           current != null ? du.formatDate(current) : 'Tap to select',
           style: TextStyle(
-              color: current != null ? null : Colors.grey.shade500),
+              color: current != null
+                  ? MagneticColors.textPrimary
+                  : MagneticColors.textMuted),
         ),
       ),
     );

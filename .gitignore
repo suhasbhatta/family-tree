@@ -31,6 +31,19 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Firebase local/runtime state and credentials
+.firebase/
+.firebaserc
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+**/service-account*.json
+**/.env
+
+# Node/Firebase Functions
+functions/node_modules/
+functions/lib/
+
 # Symbolication related
 app.*.symbols
 
@@ -41,3 +54,5 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/.gradle/
+/android/local.properties
