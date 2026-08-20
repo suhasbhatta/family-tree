@@ -113,10 +113,11 @@ export function subscribePendingAccessRequests(listener: (requests: AccessReques
 export async function approveAccessRequest(requestUid: string, role: UserIdentity['role']): Promise<void> {
   const { db, uid } = requireDb(); const requestRef = doc(db, 'accessRequests', requestUid); const accessRef = doc(db, 'adminAccess', requestUid);
   await runTransaction(db, async (tx) => {
-    const [requestSnapshot, accessSnapshot] = await Promise.all([tx.get(requestRef), tx.get(accessRef)]);
+    const requestSnapshot = await tx.get(requestRef);
     const requestData = requestSnapshot.data();
     if (!requestSnapshot.exists() || requestData?.treeId !== treeId || requestData.status !== 'pending') throw new Error('This request is no longer pending.');
-    if (accessSnapshot.exists()) throw new Error('This Google account already has access.');
+    // The rules permit only a create here, so an existing grant is rejected
+    // atomically without exposing another account's access document to clients.
     tx.set(accessRef, { treeId, status: 'active', role, displayName: requestData.displayName, email: requestData.email, createdAt: serverTimestamp(), approvedAt: serverTimestamp(), approvedBy: uid });
     tx.update(requestRef, { status: 'approved', approvedRole: role, updatedAt: serverTimestamp(), reviewedAt: serverTimestamp(), reviewedBy: uid });
     tx.set(auditRef(), audit(uid, 'access_request.approved', 'accessRequest', requestUid));
