@@ -37,16 +37,19 @@ jobs:
 
   build-web:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/magnetic-tree
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/setup-node@v4
         with:
-          flutter-version: '3.44.4'
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/magnetic-tree/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
       - name: Verify Firebase build variables
         if: github.event_name != 'pull_request'
         env:
@@ -63,20 +66,20 @@ jobs:
             fi
           done
       - name: Build GitHub Pages artifact
-        run: >-
-          flutter build web --release --base-href /family-tree/ --no-wasm-dry-run
-          --dart-define=FIREBASE_API_KEY=${{ vars.FIREBASE_API_KEY }}
-          --dart-define=FIREBASE_APP_ID=${{ vars.FIREBASE_APP_ID }}
-          --dart-define=FIREBASE_MESSAGING_SENDER_ID=${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
-          --dart-define=FIREBASE_PROJECT_ID=${{ vars.FIREBASE_PROJECT_ID }}
-          --dart-define=FIREBASE_AUTH_DOMAIN=${{ vars.FIREBASE_AUTH_DOMAIN }}
-          --dart-define=FAMILY_TREE_ID=${{ vars.FAMILY_TREE_ID || 'primary' }}
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          VITE_FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_AUTH_DOMAIN }}
+          VITE_FAMILY_TREE_ID: ${{ vars.FAMILY_TREE_ID || 'primary' }}
+        run: npm run build
       - uses: actions/configure-pages@v5
         if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with:
-          path: build/web
+          path: web/magnetic-tree/dist
 
   deploy:
     if: github.event_name != 'pull_request'

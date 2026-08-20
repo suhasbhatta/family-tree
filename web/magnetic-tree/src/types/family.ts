@@ -1,39 +1,38 @@
-export type Gender = 'M' | 'F';
+export type Gender = 'male' | 'female' | 'other' | 'unknown';
 
 export interface Person {
   id: string;
+  version: number;
   name: string;
-  kannadaName: string;
   gender: Gender;
-  birthYear: number;
-  /** ISO date string (yyyy-mm-dd), when known precisely. */
-  dob?: string;
-  placeOfResidence?: string;
-  /** Generation index, 0 = eldest generation in the tree. Used for layout rows. */
-  generation: number;
-  /** Biological parent ids (0, 1, or 2 entries). */
-  parentIds: string[];
-  /** Spouse ids (usually 0 or 1 entry, but supports remarriage). */
-  spouseIds: string[];
-  title?: string;
+  dateOfBirth: string | null;
+  dateOfDeath: string | null;
+  isAlive: boolean;
+  contactNumber: string | null;
+  currentPlaceOfResidence: string | null;
 }
 
-export interface PersonDraft {
-  name: string;
-  kannadaName: string;
-  gender: Gender;
-  dob: string;
-  placeOfResidence: string;
+export interface FamilyUnit {
+  id: string;
+  husbandId: string | null;
+  wifeId: string | null;
+  anniversaryDate: string | null;
+  childrenIds: string[];
 }
 
-export type LineageColor = 'cyan' | 'magenta' | 'emerald';
+export interface FamilyTreeData {
+  appVersion: number;
+  selectedRootFamilyUnitId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  people: Person[];
+  familyUnits: FamilyUnit[];
+}
+
+export type PersonDraft = Omit<Person, 'id' | 'version'>;
+export type FamilyUnitDraft = Omit<FamilyUnit, 'id'>;
 
 export interface RelationshipResult {
-  /** "toPerson is fromPerson's ___" */
-  englishLabel: string;
-  kannadaLabel: string;
-  kannadaScript: string;
-  /** Ordered node ids tracing the connection for the neon path animation. */
+  label: string;
   path: string[];
-  color: LineageColor;
 }
