@@ -113,7 +113,7 @@ class _AddEditPersonScreenState extends State<AddEditPersonScreen> {
                 prefixIcon: Icon(Icons.location_on_outlined),
               ),
               textCapitalization: TextCapitalization.sentences,
-              maxLength: 200,
+              maxLength: 160,
             ),
             const SizedBox(height: 24),
             FilledButton.icon(

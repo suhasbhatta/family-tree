@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import 'config/firebase_config.dart';
@@ -13,20 +14,8 @@ import 'theme/magnetic_theme.dart';
 import 'utils/app_state.dart';
 import 'utils/auth_service.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  if (FirebaseConfig.isConfigured) {
-    await Firebase.initializeApp(options: FirebaseConfig.options);
-    FirebaseFirestore.instance.settings =
-        const Settings(persistenceEnabled: false);
-    if (FirebaseConfig.useEmulators) {
-      await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
-      FirebaseFunctions.instanceFor(region: FirebaseConfig.functionsRegion)
-          .useFunctionsEmulator('localhost', 5001);
-    }
-  }
-  await AuthService.instance.initialize();
   runApp(const FamilyTreeApp());
 }
 
@@ -39,7 +28,95 @@ class FamilyTreeApp extends StatelessWidget {
       title: 'Private Family Tree',
       debugShowCheckedModeBanner: false,
       theme: MagneticTheme.build(),
-      home: const AuthGate(),
+      home: const _StartupGate(),
+    );
+  }
+}
+
+class _StartupGate extends StatefulWidget {
+  const _StartupGate();
+
+  @override
+  State<_StartupGate> createState() => _StartupGateState();
+}
+
+class _StartupGateState extends State<_StartupGate> {
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    setState(() => _failed = false);
+    try {
+      if (FirebaseConfig.isConfigured) {
+        await Firebase.initializeApp(options: FirebaseConfig.options)
+            .timeout(const Duration(seconds: 20));
+        FirebaseFirestore.instance.settings =
+            const Settings(persistenceEnabled: false);
+        if (FirebaseConfig.useEmulators) {
+          await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+          FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+        }
+      }
+      await AuthService.instance
+          .initialize()
+          .timeout(const Duration(seconds: 20));
+      if (mounted) setState(() => _ready = true);
+    } catch (error) {
+      // Avoid logging Firebase options or authentication details.
+      debugPrint('Application startup failed (${error.runtimeType}).');
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ready) return const AuthGate();
+    if (_failed) {
+      return MagneticScaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline,
+                      size: 64, color: MagneticColors.rose),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Unable to start the application',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Check the Firebase build values and internet connection, '
+                    'then try again.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: MagneticColors.textSecondary),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: _initialize,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Try again'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return const MagneticScaffold(
+      body: Center(child: CircularProgressIndicator()),
     );
   }
 }

@@ -1,5 +1,12 @@
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    - build/**
+    - functions/node_modules/**
+    - node_modules/**
+    - web/magnetic-tree/node_modules/**
+
 linter:
   rules:
     prefer_const_constructors: false

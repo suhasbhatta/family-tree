@@ -1,4 +1,4 @@
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
@@ -11,8 +11,7 @@ class AuthService extends ChangeNotifier {
   static AuthService get instance => _instance ??= AuthService._();
 
   FirebaseAuth? _auth;
-  FirebaseFunctions? _functions;
-  ConfirmationResult? _confirmation;
+  FirebaseFirestore? _db;
   AdminSession? _adminSession;
   bool _busy = false;
   bool _initialized = false;
@@ -25,10 +24,13 @@ class AuthService extends ChangeNotifier {
       _auth?.currentUser != null && _adminSession?.isActive == true;
   bool get isAdmin => isAuthenticated;
   String? get uid => _auth?.currentUser?.uid;
-  String? get maskedPhone {
-    final value = _auth?.currentUser?.phoneNumber;
-    if (value == null || value.length < 5) return null;
-    return '${value.substring(0, 3)}••••${value.substring(value.length - 2)}';
+  String? get displayName => _auth?.currentUser?.displayName;
+  String? get maskedEmail {
+    final email = _auth?.currentUser?.email;
+    if (email == null) return null;
+    final separator = email.indexOf('@');
+    if (separator <= 1) return email;
+    return '${email.substring(0, 1)}•••${email.substring(separator)}';
   }
 
   Future<void> initialize() async {
@@ -37,70 +39,66 @@ class AuthService extends ChangeNotifier {
       return;
     }
     _auth = FirebaseAuth.instance;
-    _functions = FirebaseFunctions.instanceFor(
-      region: FirebaseConfig.functionsRegion,
-    );
-    if (kIsWeb) await _auth!.setPersistence(Persistence.LOCAL);
+    _db = FirebaseFirestore.instance;
+    // Keep the Firebase session only for the current browser tab/session so a
+    // shared computer does not retain administrator access indefinitely.
+    if (kIsWeb) await _auth!.setPersistence(Persistence.SESSION);
     if (_auth!.currentUser != null) {
       try {
-        await _claimAdminAccess();
+        await _authorizeCurrentUser();
       } catch (_) {
-        await _auth!.signOut();
-        _adminSession = null;
+        await _signOutUnauthorizedUser();
       }
     }
     _initialized = true;
     notifyListeners();
   }
 
-  Future<void> sendOtp(String phoneE164) async {
-    if (!kIsWeb || _auth == null) {
-      throw StateError('Phone login is configured for the web application.');
+  Future<void> signInWithGoogle() async {
+    if (!kIsWeb || _auth == null || _db == null) {
+      throw const AuthFlowException(
+          'Google sign-in is configured for the web application.');
     }
     _setBusy(true);
     try {
-      _confirmation = await _auth!.signInWithPhoneNumber(phoneE164);
-    } on FirebaseAuthException {
+      final provider = GoogleAuthProvider()
+        ..setCustomParameters(const {'prompt': 'select_account'});
+      await _auth!.signInWithPopup(provider);
+      await _authorizeCurrentUser();
+    } on FirebaseAuthException catch (error) {
+      await _signOutUnauthorizedUser();
+      if (error.code == 'popup-closed-by-user' ||
+          error.code == 'cancelled-popup-request') {
+        throw const AuthFlowException('Google sign-in was cancelled.');
+      }
       throw const AuthFlowException(
-          'Unable to send a verification code. Please try again later.');
-    } finally {
-      _setBusy(false);
-    }
-  }
-
-  Future<void> confirmOtp(String code) async {
-    final confirmation = _confirmation;
-    if (confirmation == null) {
-      throw const AuthFlowException('Request a new verification code.');
-    }
-    _setBusy(true);
-    try {
-      await confirmation.confirm(code);
-      await _claimAdminAccess();
-      _confirmation = null;
-    } on FirebaseAuthException {
+          'Unable to sign in. Please try again later.');
+    } on FirebaseException {
+      await _signOutUnauthorizedUser();
       throw const AuthFlowException(
-          'The verification code could not be accepted.');
-    } on FirebaseFunctionsException {
-      await _auth?.signOut();
-      _adminSession = null;
-      throw const AuthFlowException(
-          'This account does not have access to the family tree.');
+          'This Google account is not authorized for this family tree.');
     } on AuthFlowException {
-      await _auth?.signOut();
-      _adminSession = null;
-      throw const AuthFlowException(
-          'This account does not have access to the family tree.');
+      await _signOutUnauthorizedUser();
+      rethrow;
     } finally {
       _setBusy(false);
     }
   }
 
-  Future<void> _claimAdminAccess() async {
-    final result = await _functions!.httpsCallable('claimAdminAccess').call();
-    final data = Map<String, dynamic>.from(result.data as Map);
-    final user = _auth!.currentUser!;
-    final session = AdminSession.fromMap(user.uid, data);
+  Future<void> _authorizeCurrentUser() async {
+    final user = _auth?.currentUser;
+    if (user == null || !user.emailVerified) {
+      throw const AuthFlowException('Access is not active.');
+    }
+    final providerIds = user.providerData.map((item) => item.providerId);
+    if (!providerIds.contains(GoogleAuthProvider.PROVIDER_ID)) {
+      throw const AuthFlowException('Access is not active.');
+    }
+    final snapshot = await _db!.collection('adminAccess').doc(user.uid).get();
+    if (!snapshot.exists) {
+      throw const AuthFlowException('Access is not active.');
+    }
+    final session = AdminSession.fromMap(user.uid, snapshot.data()!);
     if (!session.isActive || session.treeId != FirebaseConfig.treeId) {
       throw const AuthFlowException('Access is not active.');
     }
@@ -108,9 +106,13 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _signOutUnauthorizedUser() async {
+    _adminSession = null;
+    await _auth?.signOut();
+  }
+
   Future<void> logout() async {
     await _auth?.signOut();
-    _confirmation = null;
     _adminSession = null;
     notifyListeners();
   }

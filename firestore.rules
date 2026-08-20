@@ -2,45 +2,138 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSoleAdmin(treeId) {
+    function adminRecord() {
+      return get(/databases/$(database)/documents/adminAccess/$(request.auth.uid));
+    }
+
+    function isAdmin(treeId) {
       return request.auth != null
-        && exists(/databases/$(database)/documents/adminAccess/sole)
-        && get(/databases/$(database)/documents/adminAccess/sole).data.uid == request.auth.uid
-        && get(/databases/$(database)/documents/adminAccess/sole).data.status == 'active'
-        && get(/databases/$(database)/documents/adminAccess/sole).data.treeId == treeId;
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && exists(/databases/$(database)/documents/adminAccess/$(request.auth.uid))
+        && adminRecord().data.status == 'active'
+        && adminRecord().data.treeId == treeId;
+    }
+
+    function nullableString(value, maximum) {
+      return value == null || (value is string && value.size() <= maximum);
+    }
+
+    function dateOrNull(value) {
+      return value == null || (value is string
+        && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+    }
+
+    function validTree() {
+      return request.resource.data.keys().hasOnly([
+          'schemaVersion', 'selectedRootFamilyUnitId', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.schemaVersion == 2
+        && nullableString(request.resource.data.selectedRootFamilyUnitId, 128)
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validPerson() {
+      return request.resource.data.keys().hasOnly([
+          'name', 'gender', 'dateOfBirth', 'dateOfDeath', 'isAlive',
+          'currentPlaceOfResidence', 'version', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.gender in ['male', 'female', 'other', 'unknown']
+        && dateOrNull(request.resource.data.dateOfBirth)
+        && dateOrNull(request.resource.data.dateOfDeath)
+        && request.resource.data.isAlive is bool
+        && nullableString(request.resource.data.currentPlaceOfResidence, 160)
+        && request.resource.data.version is int
+        && request.resource.data.version > 0
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validPrivatePerson() {
+      return request.resource.data.keys().hasOnly(['contactNumber', 'updatedAt'])
+        && nullableString(request.resource.data.contactNumber, 32)
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validFamilyUnit() {
+      return request.resource.data.keys().hasOnly([
+          'husbandId', 'wifeId', 'anniversaryDate', 'childrenIds',
+          'createdAt', 'updatedAt'
+        ])
+        && nullableString(request.resource.data.husbandId, 128)
+        && nullableString(request.resource.data.wifeId, 128)
+        && dateOrNull(request.resource.data.anniversaryDate)
+        && request.resource.data.childrenIds is list
+        && request.resource.data.childrenIds.size() <= 100
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt == request.time;
     }
 
     match /trees/{treeId} {
-      allow read: if isSoleAdmin(treeId);
-      allow write: if false;
+      allow read: if isAdmin(treeId);
+      allow create: if isAdmin(treeId) && validTree()
+        && request.resource.data.createdAt == request.time;
+      allow update: if isAdmin(treeId) && validTree()
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
 
       match /people/{personId} {
-        allow read: if isSoleAdmin(treeId);
-        allow write: if false;
+        allow read: if isAdmin(treeId);
+        allow create: if isAdmin(treeId) && validPerson()
+          && request.resource.data.version == 1
+          && request.resource.data.createdAt == request.time;
+        allow update: if isAdmin(treeId) && validPerson()
+          && request.resource.data.version == resource.data.version + 1
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isAdmin(treeId);
       }
 
       match /familyUnits/{unitId} {
-        allow read: if isSoleAdmin(treeId);
-        allow write: if false;
+        allow read: if isAdmin(treeId);
+        allow create: if isAdmin(treeId) && validFamilyUnit()
+          && request.resource.data.createdAt == request.time;
+        allow update: if isAdmin(treeId) && validFamilyUnit()
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isAdmin(treeId);
       }
 
       match /personPrivate/{personId} {
-        allow read: if isSoleAdmin(treeId);
-        allow write: if false;
+        allow read: if isAdmin(treeId);
+        allow create, update: if isAdmin(treeId) && validPrivatePerson();
+        allow delete: if isAdmin(treeId);
       }
     }
 
-    match /adminAccess/{accessId} {
-      allow read: if accessId == 'sole'
+    match /adminAccess/{uid} {
+      allow read: if request.auth != null
+        && request.auth.uid == uid
         && resource.data.treeId is string
-        && isSoleAdmin(resource.data.treeId);
+        && isAdmin(resource.data.treeId);
       allow write: if false;
     }
 
     match /auditEvents/{eventId} {
       allow read: if resource.data.treeId is string
-        && isSoleAdmin(resource.data.treeId);
-      allow write: if false;
+        && isAdmin(resource.data.treeId);
+      allow create: if request.resource.data.keys().hasOnly([
+          'treeId', 'actorUid', 'action', 'resourceType', 'resourceId', 'createdAt'
+        ])
+        && isAdmin(request.resource.data.treeId)
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.action in [
+          'person.created', 'person.updated', 'person.deleted',
+          'family_unit.created', 'family_unit.updated', 'family_unit.deleted',
+          'tree.root_changed', 'tree.import_replaced', 'tree.import_merged'
+        ]
+        && request.resource.data.resourceType in ['person', 'familyUnit', 'tree']
+        && request.resource.data.resourceId is string
+        && request.resource.data.resourceId.size() <= 128
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
     }
 
     match /{document=**} {

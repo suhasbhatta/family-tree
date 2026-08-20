@@ -12,10 +12,6 @@ abstract final class FirebaseConfig {
   static const authDomain = String.fromEnvironment('FIREBASE_AUTH_DOMAIN');
   static const treeId =
       String.fromEnvironment('FAMILY_TREE_ID', defaultValue: 'primary');
-  static const functionsRegion = String.fromEnvironment(
-    'FIREBASE_FUNCTIONS_REGION',
-    defaultValue: 'asia-south1',
-  );
   static const useEmulators =
       bool.fromEnvironment('USE_FIREBASE_EMULATORS', defaultValue: false);
 

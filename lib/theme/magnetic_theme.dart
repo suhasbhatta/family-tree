@@ -19,7 +19,8 @@ class MagneticTheme {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: MagneticColors.void_,
       colorScheme: scheme,
-      fontFamily: 'Roboto',
+      fontFamily: 'Arial',
+      fontFamilyFallback: const ['Helvetica', 'sans-serif'],
       textTheme: const TextTheme(
         headlineSmall: TextStyle(
           color: MagneticColors.textPrimary,

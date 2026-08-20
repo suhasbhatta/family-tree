@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify-functions:
+  verify-security-rules:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,8 +33,6 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
-      - run: npm run lint
-      - run: npm test
       - run: npm run test:rules
 
   build-web:
@@ -66,14 +64,13 @@ jobs:
           done
       - name: Build GitHub Pages artifact
         run: >-
-          flutter build web --release --base-href /family-tree/
+          flutter build web --release --base-href /family-tree/ --no-wasm-dry-run
           --dart-define=FIREBASE_API_KEY=${{ vars.FIREBASE_API_KEY }}
           --dart-define=FIREBASE_APP_ID=${{ vars.FIREBASE_APP_ID }}
           --dart-define=FIREBASE_MESSAGING_SENDER_ID=${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
           --dart-define=FIREBASE_PROJECT_ID=${{ vars.FIREBASE_PROJECT_ID }}
           --dart-define=FIREBASE_AUTH_DOMAIN=${{ vars.FIREBASE_AUTH_DOMAIN }}
           --dart-define=FAMILY_TREE_ID=${{ vars.FAMILY_TREE_ID || 'primary' }}
-          --dart-define=FIREBASE_FUNCTIONS_REGION=asia-south1
       - uses: actions/configure-pages@v5
         if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v3
@@ -87,7 +84,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: [verify-functions, build-web]
+    needs: [verify-security-rules, build-web]
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
