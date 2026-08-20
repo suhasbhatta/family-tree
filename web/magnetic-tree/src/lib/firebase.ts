@@ -94,17 +94,19 @@ export async function savePerson(id: string | null, draftValue: PersonDraft, exp
 }
 
 export async function removePerson(personId: string): Promise<void> {
-  const { db, uid } = requireDb(); const root = treeRef(); const units = await getDocs(collection(root, 'familyUnits')); const batch = writeBatch(db);
+  const { db, uid } = requireDb(); const root = treeRef(); const [units, meta] = await Promise.all([getDocs(collection(root, 'familyUnits')), getDoc(root)]); const batch = writeBatch(db); let removedRoot = false;
   batch.delete(doc(root, 'people', personId)); batch.delete(doc(root, 'personPrivate', personId));
-  for (const unit of units.docs) { const data = unit.data(); const childrenIds = (data.childrenIds as string[]).filter((id) => id !== personId); if (data.husbandId === personId || data.wifeId === personId || childrenIds.length !== data.childrenIds.length) batch.update(unit.ref, { husbandId: data.husbandId === personId ? null : data.husbandId, wifeId: data.wifeId === personId ? null : data.wifeId, childrenIds, updatedAt: serverTimestamp() }); }
-  batch.set(root, { updatedAt: serverTimestamp() }, { merge: true }); batch.set(auditRef(), audit(uid, 'person.deleted', 'person', personId)); await batch.commit();
+  for (const unit of units.docs) { const data = unit.data(); const husbandId = data.husbandId === personId ? null : data.husbandId; const wifeId = data.wifeId === personId ? null : data.wifeId; const childrenIds = (data.childrenIds as string[]).filter((id) => id !== personId); if (data.husbandId === personId || data.wifeId === personId || childrenIds.length !== data.childrenIds.length) { if (!husbandId && !wifeId) { batch.delete(unit.ref); batch.set(auditRef(), audit(uid, 'family_unit.deleted', 'familyUnit', unit.id)); removedRoot ||= meta.data()?.selectedRootFamilyUnitId === unit.id; } else batch.update(unit.ref, { husbandId, wifeId, childrenIds, updatedAt: serverTimestamp() }); } }
+  batch.set(root, { ...(removedRoot ? { selectedRootFamilyUnitId: null } : {}), updatedAt: serverTimestamp() }, { merge: true }); batch.set(auditRef(), audit(uid, 'person.deleted', 'person', personId)); await batch.commit();
 }
 
 export async function saveFamilyUnit(id: string | null, value: FamilyUnitDraft): Promise<string> {
   const { db, uid } = requireDb(); await ensureTree(); const unitId = id ? validId(id, 'Family unit ID') : crypto.randomUUID();
   const members = [value.husbandId, value.wifeId, ...value.childrenIds].filter((item): item is string => Boolean(item));
   if (!value.husbandId && !value.wifeId) throw new Error('Choose at least one parent.');
-  if (new Set(members).size !== members.length) throw new Error('Each person can appear only once in a family unit.');
+  if (value.husbandId && value.husbandId === value.wifeId) throw new Error('Choose two different people as partners.');
+  if (value.childrenIds.includes(value.husbandId ?? '') || value.childrenIds.includes(value.wifeId ?? '')) throw new Error('A parent cannot also be selected as a child in the same family.');
+  if (new Set(members).size !== members.length) throw new Error('A child was selected more than once.');
   const snapshots = await Promise.all(members.map((personId) => getDoc(doc(treeRef(), 'people', personId)))); if (snapshots.some((item) => !item.exists())) throw new Error('A selected person no longer exists.');
   const ref = doc(treeRef(), 'familyUnits', unitId); const current = await getDoc(ref); if (id && !current.exists()) throw new Error('Family unit not found.'); if (!id && current.exists()) throw new Error('Family unit already exists.');
   const batch = writeBatch(db); batch.set(ref, { husbandId: value.husbandId, wifeId: value.wifeId, anniversaryDate: value.anniversaryDate || null, childrenIds: [...new Set(value.childrenIds)], createdAt: current.data()?.createdAt ?? serverTimestamp(), updatedAt: serverTimestamp() }); batch.set(treeRef(), { updatedAt: serverTimestamp() }, { merge: true }); batch.set(auditRef(), audit(uid, id ? 'family_unit.updated' : 'family_unit.created', 'familyUnit', unitId)); await batch.commit(); return unitId;
