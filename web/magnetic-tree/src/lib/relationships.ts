@@ -72,7 +72,7 @@ function branchKind(subjectLineage: string[], relativeLineage: string[], peopleB
 function kannadaTerm(subjectDistance: number, relativeDistance: number, subject: Person, relative: Person, subjectLineage: string[], relativeLineage: string[], peopleById: Map<string, Person>): string {
   if (relativeDistance === 0) {
     if (subjectDistance === 1) return gendered(relative.gender, 'ತಂದೆ (Tande)', 'ತಾಯಿ (Taayi)', 'ಪೋಷಕರು (Parent)');
-    if (subjectDistance === 2) return gendered(relative.gender, 'ಅಜ್ಜ (Ajja)', 'ಅಜ್ಜಿ (Ajji)', 'ಅಜ್ಜ/ಅಜ್ಜಿ (Grandparent)');
+    if (subjectDistance === 2) return gendered(relative.gender, 'ತಾತಾ / ಅಜ್ಜ (Taata / Ajja)', 'ಅಜ್ಜಿ (Ajji)', 'ಅಜ್ಜ/ಅಜ್ಜಿ (Grandparent)');
     return gendered(relative.gender, 'ಮುತ್ತಜ್ಜ (Ancestor)', 'ಮುತ್ತಜ್ಜಿ (Ancestor)', 'ಪೂರ್ವಜರು (Ancestor)');
   }
   if (subjectDistance === 0) {
@@ -93,7 +93,8 @@ function kannadaTerm(subjectDistance: number, relativeDistance: number, subject:
   }
   if (subjectDistance === 1 && relativeDistance === 2 && relativeBranch) {
     const relation = relativeBranch.gender === 'male' ? 'ಸೋದರನ' : relativeBranch.gender === 'female' ? 'ಸೋದರಿಯ' : 'ಸಹೋದರರ';
-    return `${relation} ${childTerm(relative.gender)}`;
+    const traditional = relative.gender === 'male' ? 'ಅಳಿಯ (Aliya)' : relative.gender === 'female' ? 'ಸೊಸೆ (Sose)' : '';
+    return `${relation} ${childTerm(relative.gender)}${traditional ? ` / ${traditional}` : ''}`;
   }
   if (subjectDistance === 2 && relativeDistance === 2 && subjectBranch && relativeBranch) {
     if (subjectBranch.gender === 'male' && relativeBranch.gender === 'female') return `ಸೋದರತ್ತೆಯ ${childTerm(relative.gender)}`;
@@ -121,12 +122,32 @@ function directSpouse(from: Person, to: Person, units: FamilyUnit[]): Relationsh
   };
 }
 
-function describeAffinal(kinds: LinkKind[], gender: Person['gender']): string {
-  if (kinds.length === 2 && kinds[0] === 'spouse' && kinds[1] === 'parent') return gendered(gender, 'Father-in-law', 'Mother-in-law', 'Parent-in-law');
-  if (kinds.length === 2 && kinds[0] === 'child' && kinds[1] === 'spouse') return gendered(gender, 'Son-in-law', 'Daughter-in-law', 'Child-in-law');
-  if (kinds.length === 2 && kinds[0] === 'parent' && kinds[1] === 'spouse') return gendered(gender, 'Stepfather', 'Stepmother', 'Stepparent');
-  if (kinds.length === 2 && kinds[0] === 'spouse' && kinds[1] === 'child') return gendered(gender, 'Stepson', 'Stepdaughter', 'Stepchild');
-  return `Relative by marriage (${kinds.length} connections)`;
+function describeAffinal(subject: Person, relative: Person, connection: { path: string[]; kinds: LinkKind[] }, peopleById: Map<string, Person>): { english: string; kannada: string } {
+  const key = connection.kinds.join('/');
+  if (key === 'spouse/parent') return { english: gendered(relative.gender, 'Father-in-law', 'Mother-in-law', 'Parent-in-law'), kannada: gendered(relative.gender, 'ಮಾವ (Maava)', 'ಅತ್ತೆ (Atte)', 'ಮಾವ/ಅತ್ತೆ (Parent-in-law)') };
+  if (key === 'child/spouse') return { english: gendered(relative.gender, 'Son-in-law', 'Daughter-in-law', 'Child-in-law'), kannada: gendered(relative.gender, 'ಅಳಿಯ (Aliya)', 'ಸೊಸೆ (Sose)', 'ಅಳಿಯ/ಸೊಸೆ (Child-in-law)') };
+  if (key === 'parent/spouse') return { english: gendered(relative.gender, 'Stepfather', 'Stepmother', 'Stepparent'), kannada: 'ಮಲತಂದೆ / ಮಲತಾಯಿ (Stepparent)' };
+  if (key === 'spouse/child') return { english: gendered(relative.gender, 'Stepson', 'Stepdaughter', 'Stepchild'), kannada: gendered(relative.gender, 'ಮಲಮಗ (Stepson)', 'ಮಲಮಗಳು (Stepdaughter)', 'ಮಲಮಗು (Stepchild)') };
+  if (key === 'spouse/parent/child') {
+    const spouse = peopleById.get(connection.path[1]); const age = compareAge(relative, spouse);
+    const english = gendered(relative.gender, `${age === 'older' ? 'Elder ' : age === 'younger' ? 'Younger ' : ''}Brother-in-law`, 'Sister-in-law', 'Sibling-in-law');
+    const kannada = relative.gender === 'male' ? age === 'older' ? 'ಬಾವ (Baava — elder brother-in-law)' : age === 'younger' ? 'ಮೈದುನ (Maiduna — younger brother-in-law)' : 'ಬಾವ / ಮೈದುನ (Brother-in-law)' : relative.gender === 'female' ? 'ನಾದಿನಿ (Naadini — sister-in-law)' : 'ವೈವಾಹಿಕ ಸಹೋದರ/ಸಹೋದರಿ (Sibling-in-law)';
+    return { english, kannada };
+  }
+  if (key === 'parent/child/spouse') return { english: gendered(relative.gender, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law'), kannada: relative.gender === 'male' ? 'ಬಾವ (Baava — sister’s husband)' : 'ವೈವಾಹಿಕ ಸಹೋದರಿ (Sibling’s wife)' };
+  if (key === 'parent/parent/child/spouse') {
+    const parent = peopleById.get(connection.path[1]); const parentSibling = peopleById.get(connection.path[3]); const age = compareAge(parentSibling, parent);
+    if (parent?.gender === 'male' && parentSibling?.gender === 'male' && relative.gender === 'female') return { english: `Paternal aunt by marriage${age === 'unknown' ? '' : ` (${age} uncle’s wife)`}`, kannada: age === 'older' ? 'ದೊಡ್ಡಮ್ಮ (Doddamma)' : age === 'younger' ? 'ಚಿಕ್ಕಮ್ಮ / ಕಾಕಿ (Chikkamma / Kaaki)' : 'ದೊಡ್ಡಮ್ಮ / ಚಿಕ್ಕಮ್ಮ (Father’s brother’s wife)' };
+    if (parent?.gender === 'male' && parentSibling?.gender === 'female' && relative.gender === 'male') return { english: 'Paternal uncle by marriage (father’s sister’s husband)', kannada: 'ಮಾವ (Maava)' };
+    if (parent?.gender === 'female' && parentSibling?.gender === 'male' && relative.gender === 'female') return { english: 'Maternal aunt by marriage (mother’s brother’s wife)', kannada: 'ಅತ್ತೆ (Atte)' };
+    if (parent?.gender === 'female' && parentSibling?.gender === 'female' && relative.gender === 'male') return { english: `Maternal uncle by marriage${age === 'unknown' ? '' : ` (${age} aunt’s husband)`}`, kannada: age === 'older' ? 'ದೊಡ್ಡಪ್ಪ (Doddappa)' : age === 'younger' ? 'ಚಿಕ್ಕಪ್ಪ (Chikkappa)' : 'ದೊಡ್ಡಪ್ಪ / ಚಿಕ್ಕಪ್ಪ (Mother’s sister’s husband)' };
+  }
+  if (key === 'spouse/parent/child/spouse') {
+    if (subject.gender === 'male' && relative.gender === 'male') return { english: 'Co-brother', kannada: 'ಅಕ್ಕಿಪಕ್ಕಿ / ಸಾದರ (Akkipakki / Saadara)' };
+    if (subject.gender === 'female' && relative.gender === 'female') return { english: 'Co-sister', kannada: 'ಓರಗಿತ್ತಿ (Oragitti)' };
+  }
+  if (key === 'spouse/parent/child/child') return { english: gendered(relative.gender, 'Nephew by marriage', 'Niece by marriage', 'Sibling’s child by marriage'), kannada: gendered(relative.gender, 'ಅಳಿಯ (Aliya — traditional usage)', 'ಸೊಸೆ (Sose — traditional usage)', 'ವೈವಾಹಿಕ ಮುಂದಿನ ಪೀಳಿಗೆ') };
+  return { english: `Relative by marriage (${connection.kinds.length} connections)`, kannada: 'ವೈವಾಹಿಕ ಸಂಬಂಧಿ (Relative by marriage)' };
 }
 
 function affinalPath(fromId: string, toId: string, peopleById: Map<string, Person>, units: FamilyUnit[]): { path: string[]; kinds: LinkKind[] } | null {
@@ -152,8 +173,8 @@ function affinalPath(fromId: string, toId: string, peopleById: Map<string, Perso
 function affinalRelationship(from: Person, to: Person, peopleById: Map<string, Person>, units: FamilyUnit[]): RelationshipResult | null {
   const forward = affinalPath(from.id, to.id, peopleById, units); const reverse = affinalPath(to.id, from.id, peopleById, units);
   if (!forward || !reverse || !forward.kinds.includes('spouse')) return null;
-  const label = describeAffinal(forward.kinds, to.gender); const reverseLabel = describeAffinal(reverse.kinds, from.gender);
-  return { label, reverseLabel, formalRelationship: `${label} / ${reverseLabel}`, path: forward.path, mrcaIds: [], fromLineage: [from.id], toLineage: [to.id], fromDistance: null, toDistance: null, kannadaFromTo: 'ವೈವಾಹಿಕ ಸಂಬಂಧಿ (Relative by marriage)', kannadaToFrom: 'ವೈವಾಹಿಕ ಸಂಬಂಧಿ (Relative by marriage)', logic: `${from.name} and ${to.name} are connected through a recorded spouse relationship rather than a shared known ancestor.` };
+  const forwardDescription = describeAffinal(from, to, forward, peopleById); const reverseDescription = describeAffinal(to, from, reverse, peopleById);
+  return { label: forwardDescription.english, reverseLabel: reverseDescription.english, formalRelationship: `${forwardDescription.english} / ${reverseDescription.english}`, path: forward.path, mrcaIds: [], fromLineage: [from.id], toLineage: [to.id], fromDistance: null, toDistance: null, kannadaFromTo: forwardDescription.kannada, kannadaToFrom: reverseDescription.kannada, logic: `${from.name} and ${to.name} are connected through a recorded spouse relationship rather than a shared known ancestor.` };
 }
 
 export function findRelationship(fromId: string, toId: string, people: Person[], units: FamilyUnit[]): RelationshipResult | null {
@@ -183,7 +204,11 @@ export function findRelationship(fromId: string, toId: string, people: Person[],
   return {
     label, reverseLabel, formalRelationship, path: [...fromLineage].reverse().concat(toLineage.slice(1)), mrcaIds, fromLineage, toLineage, fromDistance, toDistance,
     kannadaFromTo: kannadaTerm(fromDistance, toDistance, from, to, fromLineage, toLineage, peopleById), kannadaToFrom: kannadaTerm(toDistance, fromDistance, to, from, toLineage, fromLineage, peopleById), logic,
-    ...(kind === 'cross' ? { culturalNote: 'Kannada cross-cousin terminology and marriage customs vary by region, community, and family. Terms such as ಬಾವ may be used in some traditions; this genealogical result does not infer marriage eligibility.' } : {}),
+    ...(kind === 'cross'
+      ? { culturalNote: 'Kannada cross-cousin terminology and marriage customs vary by region, community, and family. Terms such as ಬಾವ may be used in some traditions; this genealogical result does not infer marriage eligibility.' }
+      : (fromDistance === 1 && toDistance === 2) || (fromDistance === 2 && toDistance === 1)
+        ? { culturalNote: 'The terms ಸೊಸೆ and ಅಳಿಯ can be used for niece and nephew in some traditions, but usage varies by family and community.' }
+        : {}),
   };
 }
 

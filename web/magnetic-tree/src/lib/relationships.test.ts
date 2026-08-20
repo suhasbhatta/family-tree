@@ -12,6 +12,11 @@ const units: FamilyUnit[] = [
 describe('findRelationship', () => {
   it('finds grandparents in the correct direction', () => expect(findRelationship('child', 'grandpa', people, units)?.label).toBe('Grandfather'));
   it('finds an uncle through the shared grandparents', () => expect(findRelationship('child', 'uncle', people, units)?.label).toBe('Uncle'));
+  it('includes traditional niece terminology without treating it as universal', () => {
+    const result = findRelationship('uncle', 'child', people, units)!;
+    expect(result.kannadaFromTo).toContain('ಸೊಸೆ');
+    expect(result.culturalNote).toContain('usage varies');
+  });
   it('returns null for an unconnected profile', () => expect(findRelationship('child', 'outsider', [...people, person('outsider', 'Outsider', 'unknown')], units)).toBeNull());
 
   it('explains both directions of a Kannada cross-cousin relationship', () => {
@@ -68,7 +73,65 @@ describe('findRelationship', () => {
       { id: 'origin', husbandId: 'father', wifeId: null, anniversaryDate: null, childrenIds: ['wife'] },
       { id: 'couple', husbandId: 'husband', wifeId: 'wife', anniversaryDate: null, childrenIds: [] },
     ];
-    expect(findRelationship('husband', 'father', family, familyUnits)?.label).toBe('Father-in-law');
+    const result = findRelationship('husband', 'father', family, familyUnits)!;
+    expect(result.label).toBe('Father-in-law');
+    expect(result.kannadaFromTo).toBe('ಮಾವ (Maava)');
+    expect(result.kannadaToFrom).toBe('ಅಳಿಯ (Aliya)');
+  });
+
+  it('distinguishes paternal and maternal aunts and uncles by marriage', () => {
+    const paternal = [
+      person('pg', 'Grandparent', 'male'), person('father', 'Father', 'male', '1970-01-01'), person('elder-uncle', 'Elder uncle', 'male', '1960-01-01'),
+      person('doddamma', 'Doddamma', 'female'), person('child', 'Child', 'female'),
+    ];
+    const paternalUnits: FamilyUnit[] = [
+      { id: 'p-roots', husbandId: 'pg', wifeId: null, anniversaryDate: null, childrenIds: ['father', 'elder-uncle'] },
+      { id: 'p-parent', husbandId: 'father', wifeId: null, anniversaryDate: null, childrenIds: ['child'] },
+      { id: 'p-uncle', husbandId: 'elder-uncle', wifeId: 'doddamma', anniversaryDate: null, childrenIds: [] },
+    ];
+    const paternalResult = findRelationship('child', 'doddamma', paternal, paternalUnits)!;
+    expect(paternalResult.label).toContain('Paternal aunt by marriage');
+    expect(paternalResult.kannadaFromTo).toBe('ದೊಡ್ಡಮ್ಮ (Doddamma)');
+
+    const maternal = [
+      person('mg', 'Grandparent', 'female'), person('mother', 'Mother', 'female', '1970-01-01'), person('younger-aunt', 'Younger aunt', 'female', '1980-01-01'),
+      person('chikkappa', 'Chikkappa', 'male'), person('child', 'Child', 'male'),
+    ];
+    const maternalUnits: FamilyUnit[] = [
+      { id: 'm-roots', husbandId: null, wifeId: 'mg', anniversaryDate: null, childrenIds: ['mother', 'younger-aunt'] },
+      { id: 'm-parent', husbandId: null, wifeId: 'mother', anniversaryDate: null, childrenIds: ['child'] },
+      { id: 'm-aunt', husbandId: 'chikkappa', wifeId: 'younger-aunt', anniversaryDate: null, childrenIds: [] },
+    ];
+    expect(findRelationship('child', 'chikkappa', maternal, maternalUnits)?.kannadaFromTo).toBe('ಚಿಕ್ಕಪ್ಪ (Chikkappa)');
+  });
+
+  it('uses elder and younger Kannada terms for a spouse’s brothers', () => {
+    const family = [person('parent', 'Parent', 'unknown'), person('elder', 'Elder brother', 'male', '1970-01-01'), person('wife', 'Wife', 'female', '1980-01-01'), person('husband', 'Husband', 'male')];
+    const familyUnits: FamilyUnit[] = [
+      { id: 'siblings', husbandId: 'parent', wifeId: null, anniversaryDate: null, childrenIds: ['elder', 'wife'] },
+      { id: 'couple', husbandId: 'husband', wifeId: 'wife', anniversaryDate: null, childrenIds: [] },
+    ];
+    const result = findRelationship('husband', 'elder', family, familyUnits)!;
+    expect(result.label).toBe('Elder Brother-in-law');
+    expect(result.kannadaFromTo).toContain('ಬಾವ');
+  });
+
+  it('identifies co-brothers and co-sisters', () => {
+    const family = [
+      person('parent', 'Parent', 'unknown'), person('sister1', 'Sister 1', 'female'), person('sister2', 'Sister 2', 'female'),
+      person('man1', 'Man 1', 'male'), person('man2', 'Man 2', 'male'),
+      person('brother1', 'Brother 1', 'male'), person('brother2', 'Brother 2', 'male'), person('woman1', 'Woman 1', 'female'), person('woman2', 'Woman 2', 'female'), person('parent2', 'Parent 2', 'unknown'),
+    ];
+    const familyUnits: FamilyUnit[] = [
+      { id: 'sisters', husbandId: 'parent', wifeId: null, anniversaryDate: null, childrenIds: ['sister1', 'sister2'] },
+      { id: 'couple1', husbandId: 'man1', wifeId: 'sister1', anniversaryDate: null, childrenIds: [] },
+      { id: 'couple2', husbandId: 'man2', wifeId: 'sister2', anniversaryDate: null, childrenIds: [] },
+      { id: 'brothers', husbandId: 'parent2', wifeId: null, anniversaryDate: null, childrenIds: ['brother1', 'brother2'] },
+      { id: 'couple3', husbandId: 'brother1', wifeId: 'woman1', anniversaryDate: null, childrenIds: [] },
+      { id: 'couple4', husbandId: 'brother2', wifeId: 'woman2', anniversaryDate: null, childrenIds: [] },
+    ];
+    expect(findRelationship('man1', 'man2', family, familyUnits)?.kannadaFromTo).toContain('ಅಕ್ಕಿಪಕ್ಕಿ');
+    expect(findRelationship('woman1', 'woman2', family, familyUnits)?.kannadaFromTo).toContain('ಓರಗಿತ್ತಿ');
   });
 });
 
