@@ -19,9 +19,9 @@ const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 
-export interface AdminIdentity { user: User; displayName: string }
+export interface UserIdentity { user: User; displayName: string; role: 'admin' | 'viewer' }
 
-export async function initializeAuth(listener: (identity: AdminIdentity | null, error?: string) => void): Promise<() => void> {
+export async function initializeAuth(listener: (identity: UserIdentity | null, error?: string) => void): Promise<() => void> {
   if (!auth || !db) { listener(null, 'Firebase build configuration is missing.'); return () => undefined; }
   try { await setPersistence(auth, browserSessionPersistence); } catch { listener(null, 'Secure sign-in could not be initialized. Refresh and try again.'); return () => undefined; }
   return onAuthStateChanged(auth, async (user) => {
@@ -31,11 +31,11 @@ export async function initializeAuth(listener: (identity: AdminIdentity | null, 
       if (!user.emailVerified || !providers.has('google.com')) throw new Error('unauthorized');
       const access = await getDoc(doc(db, 'adminAccess', user.uid));
       const data = access.data();
-      if (!access.exists() || data?.status !== 'active' || data?.treeId !== treeId) throw new Error('unauthorized');
-      listener({ user, displayName: typeof data.displayName === 'string' ? data.displayName : user.displayName ?? 'Administrator' });
+      const isAdmin = access.exists() && data?.status === 'active' && data?.treeId === treeId;
+      listener({ user, role: isAdmin ? 'admin' : 'viewer', displayName: isAdmin && typeof data.displayName === 'string' ? data.displayName : user.displayName ?? (isAdmin ? 'Administrator' : 'Viewer') });
     } catch {
       await signOut(auth);
-      listener(null, 'This Google account is not authorized for this family tree.');
+      listener(null, 'Unable to verify Google access. Please try again.');
     }
   });
 }
@@ -58,11 +58,11 @@ const treeRef = () => doc(requireDb().db, 'trees', treeId);
 const auditRef = () => doc(collection(requireDb().db, 'auditEvents'));
 const audit = (uid: string, action: string, resourceType: string, resourceId: string) => ({ treeId, actorUid: uid, action, resourceType, resourceId, createdAt: serverTimestamp() });
 
-export async function loadTree(): Promise<FamilyTreeData> {
+export async function loadTree(includePrivate = false): Promise<FamilyTreeData> {
   requireDb();
   const root = treeRef();
-  const [meta, publicPeople, privatePeople, units] = await Promise.all([getDoc(root), getDocs(collection(root, 'people')), getDocs(collection(root, 'personPrivate')), getDocs(collection(root, 'familyUnits'))]);
-  const privateById = new Map(privatePeople.docs.map((item) => [item.id, item.data()]));
+  const [meta, publicPeople, units, privatePeople] = await Promise.all([getDoc(root), getDocs(collection(root, 'people')), getDocs(collection(root, 'familyUnits')), includePrivate ? getDocs(collection(root, 'personPrivate')) : Promise.resolve(null)]);
+  const privateById = new Map(privatePeople?.docs.map((item) => [item.id, item.data()]) ?? []);
   const people: Person[] = publicPeople.docs.map((item) => {
     const data = item.data(); const privateData = privateById.get(item.id);
     return { id: item.id, version: Number(data.version ?? 0), name: String(data.name ?? ''), gender: data.gender ?? 'unknown', dateOfBirth: data.dateOfBirth ?? null, dateOfDeath: data.dateOfDeath ?? null, isAlive: data.isAlive !== false, contactNumber: privateData?.contactNumber ?? null, currentPlaceOfResidence: data.currentPlaceOfResidence ?? null };

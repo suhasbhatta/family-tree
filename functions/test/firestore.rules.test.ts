@@ -60,6 +60,14 @@ beforeEach(async () => {
     await db.doc('trees/primary/personPrivate/p1').set({
       contactNumber: '+919999999999', updatedAt: now,
     });
+    await db.doc('trees/primary/familyUnits/f1').set({
+      husbandId: 'p1',
+      wifeId: null,
+      anniversaryDate: null,
+      childrenIds: [],
+      createdAt: now,
+      updatedAt: now,
+    });
     await db.doc('auditEvents/event1').set({
       treeId: 'primary',
       actorUid: 'admin',
@@ -77,10 +85,49 @@ test('denies all family data to unauthenticated visitors', async () => {
   await assertFails(db.doc('trees/primary/people/p1').get());
 });
 
-test('denies a Google account that is not on the admin allowlist', async () => {
+test('allows any verified Google user to read the public tree only', async () => {
   const db = environment.authenticatedContext('other', googleClaims).firestore();
-  await assertFails(db.doc('trees/primary').get());
+  await assertSucceeds(db.doc('trees/primary').get());
+  await assertSucceeds(db.doc('trees/primary/people/p1').get());
+  await assertSucceeds(db.doc('trees/primary/familyUnits/f1').get());
+  await assertSucceeds(db.doc('adminAccess/other').get());
   await assertFails(db.doc('trees/primary/personPrivate/p1').get());
+  await assertFails(db.doc('auditEvents/event1').get());
+  await assertFails(db.doc('adminAccess/admin').get());
+});
+
+test('prevents a Google viewer from changing any family data', async () => {
+  const db = environment.authenticatedContext('other', googleClaims).firestore();
+  await assertFails(db.doc('trees/primary/people/p2').set({
+    name: 'Unauthorized change',
+    gender: 'unknown',
+    dateOfBirth: null,
+    dateOfDeath: null,
+    isAlive: true,
+    currentPlaceOfResidence: null,
+    version: 1,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(db.doc('trees/primary/people/p1').update({
+    name: 'Changed by viewer',
+    version: 2,
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(db.doc('trees/primary/people/p1').delete());
+  await assertFails(db.doc('trees/primary/familyUnits/f1').delete());
+  await assertFails(db.doc('trees/primary').update({
+    selectedRootFamilyUnitId: 'f1',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(db.doc('auditEvents/viewer-event').set({
+    treeId: 'primary',
+    actorUid: 'other',
+    action: 'person.created',
+    resourceType: 'person',
+    resourceId: 'p2',
+    createdAt: serverTimestamp(),
+  }));
 });
 
 test('denies a non-Google session even when its UID is allowlisted', async () => {
@@ -88,6 +135,15 @@ test('denies a non-Google session even when its UID is allowlisted', async () =>
     email: 'admin@example.com',
     email_verified: true,
     firebase: {sign_in_provider: 'password'},
+  }).firestore();
+  await assertFails(db.doc('trees/primary').get());
+});
+
+test('denies an unverified Google session', async () => {
+  const db = environment.authenticatedContext('other', {
+    email: 'other@example.com',
+    email_verified: false,
+    firebase: {sign_in_provider: 'google.com'},
   }).firestore();
   await assertFails(db.doc('trees/primary').get());
 });

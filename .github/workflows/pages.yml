@@ -67,6 +67,7 @@ jobs:
           done
       - name: Build GitHub Pages artifact
         env:
+          VITE_BASE_PATH: ${{ format('/{0}/', github.event.repository.name) }}
           VITE_FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
           VITE_FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}

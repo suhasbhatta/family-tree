@@ -1,18 +1,19 @@
 # Parivara Family Archive
 
-A private, web-first family tree for a small group of approved Google administrators. The production UI is built with React, TypeScript, and [React Flow](https://reactflow.dev/); GitHub Pages hosts the static PWA while Firebase Authentication and Cloud Firestore protect the family data.
+A private, web-first family tree for Google-authenticated viewers and a small group of approved administrators. The production UI is built with React, TypeScript, and [React Flow](https://reactflow.dev/); GitHub Pages hosts the static PWA while Firebase Authentication and Cloud Firestore protect the family data.
 
 ## Highlights
 
 - Interactive family canvas with custom couple/person nodes, generation layout, relationship edges, minimap, pan, zoom, fit-to-view, search, and path highlighting
-- Google Sign-In restricted by immutable `adminAccess/{uid}` Firestore records
+- Google Sign-In gives every verified Google account read-only access to public family profiles and relationships
+- Immutable `adminAccess/{uid}` records grant selected accounts administrator access
 - Admin management for people, couples/family units, children, and the root family
 - Profile detail drawer, responsive navigation, relationship finder, and duplicate review
 - Validated JSON import/export with size, ID, date, duplicate, and reference checks
 - Version-checked person updates and privacy-safe audit events
 - Installable, responsive GitHub Pages PWA with network-only service worker behavior so private family data is never placed in a browser cache
 
-Family data, administrator records, Gmail addresses, and Firebase credentials are not committed to this repository. Firebase's public web identifiers are injected by GitHub Actions variables during the build.
+Family data, administrator records, Gmail addresses, and Firebase credentials are not committed to this repository. Firebase's public web identifiers are injected by GitHub Actions variables during the build. The tree is not anonymously public, but anyone with a Google account and the site URL can view its non-contact information.
 
 ## Architecture
 
@@ -32,7 +33,7 @@ The original Flutter client remains in the repository as migration history. The 
 
 ## Firebase configuration
 
-No Firebase schema or administrator changes are required for this UI migration. Keep:
+Keep the following Firebase configuration:
 
 1. **Authentication → Sign-in method → Google** enabled.
 2. The exact GitHub Pages host (for example, `suhasbhatta.github.io`) in **Authentication → Settings → Authorized domains**.
@@ -44,7 +45,9 @@ No Firebase schema or administrator changes are required for this UI migration. 
    displayName string   Administrator name (optional)
    ```
 
-4. The current `trees/primary` data and deployed Firestore rules.
+4. The current `trees/primary` data.
+
+Viewers do not need an `adminAccess` document. A signed-in Google user without an active matching document automatically receives the read-only viewer role.
 
 Deploy rules when `firestore.rules` changes:
 
@@ -104,12 +107,14 @@ Under **Repository settings → Secrets and variables → Actions → Variables*
 - `FIREBASE_AUTH_DOMAIN`
 - `FAMILY_TREE_ID` (`primary`)
 
-Select **GitHub Actions** as the Pages source. A push to `main` verifies the React app and Firestore rules, builds Vite with the `/family-tree/` base path, and deploys `web/magnetic-tree/dist`.
+Select **GitHub Actions** as the Pages source. A push to `main` verifies the React app and Firestore rules, derives the Pages base path from the repository name, and deploys `web/magnetic-tree/dist`. The current public URL is `https://suhasbhatta.github.io/parivara/`.
 
 ## Security defaults
 
 - Google provides authentication; session persistence is limited to the current browser session.
-- Firestore rules deny access unless the verified Google UID has an active admin record for the configured tree.
+- Firestore rules allow verified Google users to read public profiles and family relationships, while anonymous and non-Google sessions remain blocked.
+- Private contact documents and audit records are readable only by active administrators for the configured tree.
+- Only active administrators can add, edit, delete, import, export, or change family relationships.
 - Browser clients cannot create or modify administrator access records.
 - Firestore rules validate all writable schemas and every mutation creates a redacted audit event.
 - Import is admin-only, JSON-only, capped at 512 KB, 300 people, and 150 family units.

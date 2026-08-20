@@ -1,8 +1,8 @@
 {
   "name": "Parivara Family Archive",
   "short_name": "Parivara",
-  "start_url": "/family-tree/",
-  "scope": "/family-tree/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#070a12",
   "theme_color": "#070a12",

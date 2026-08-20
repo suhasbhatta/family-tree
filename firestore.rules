@@ -6,10 +6,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/adminAccess/$(request.auth.uid));
     }
 
-    function isAdmin(treeId) {
+    function isGoogleUser() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function isAdmin(treeId) {
+      return isGoogleUser()
         && exists(/databases/$(database)/documents/adminAccess/$(request.auth.uid))
         && adminRecord().data.status == 'active'
         && adminRecord().data.treeId == treeId;
@@ -74,7 +78,7 @@ service cloud.firestore {
     }
 
     match /trees/{treeId} {
-      allow read: if isAdmin(treeId);
+      allow read: if isGoogleUser();
       allow create: if isAdmin(treeId) && validTree()
         && request.resource.data.createdAt == request.time;
       allow update: if isAdmin(treeId) && validTree()
@@ -82,7 +86,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /people/{personId} {
-        allow read: if isAdmin(treeId);
+        allow read: if isGoogleUser();
         allow create: if isAdmin(treeId) && validPerson()
           && request.resource.data.version == 1
           && request.resource.data.createdAt == request.time;
@@ -93,7 +97,7 @@ service cloud.firestore {
       }
 
       match /familyUnits/{unitId} {
-        allow read: if isAdmin(treeId);
+        allow read: if isGoogleUser();
         allow create: if isAdmin(treeId) && validFamilyUnit()
           && request.resource.data.createdAt == request.time;
         allow update: if isAdmin(treeId) && validFamilyUnit()
@@ -109,10 +113,7 @@ service cloud.firestore {
     }
 
     match /adminAccess/{uid} {
-      allow read: if request.auth != null
-        && request.auth.uid == uid
-        && resource.data.treeId is string
-        && isAdmin(resource.data.treeId);
+      allow read: if isGoogleUser() && request.auth.uid == uid;
       allow write: if false;
     }
 
