@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Archive, ChevronRight, Crown, Download, GitBranch, HeartHandshake, LogOut, Menu, Network, Plus, Search, Settings2, Sparkles, Trash2, Upload, Users, X } from 'lucide-react';
-import type { UserIdentity } from '../lib/firebase';
-import { importTree, loadTree, logout, removeFamilyUnit, removePerson, saveFamilyUnit, savePerson, setRoot } from '../lib/firebase';
+import { AlertTriangle, Archive, ChevronRight, Crown, Download, GitBranch, HeartHandshake, LogOut, Menu, Network, Plus, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserCheck, Users, X } from 'lucide-react';
+import type { AccessRequest, UserIdentity } from '../lib/firebase';
+import { approveAccessRequest, importTree, loadPendingAccessRequests, loadTree, logout, rejectAccessRequest, removeFamilyUnit, removePerson, saveFamilyUnit, savePerson, setRoot, subscribePendingAccessRequests } from '../lib/firebase';
 import { duplicateGroups, findRelationship } from '../lib/relationships';
 import { parseTreeImport } from '../lib/validation';
 import type { FamilyTreeData, FamilyUnit, FamilyUnitDraft, Person, PersonDraft } from '../types/family';
@@ -9,13 +9,14 @@ import { FamilyUnitEditor, PersonEditor } from './EditorModal';
 import { SearchPalette } from './SearchPalette';
 import { TreeCanvas } from './TreeCanvas';
 
-type View = 'tree' | 'people' | 'families' | 'relationships' | 'tools';
+type View = 'tree' | 'people' | 'families' | 'relationships' | 'requests' | 'tools';
 
 const VIEW_META: Record<View, { label: string; icon: typeof Network; subtitle: string }> = {
   tree: { label: 'Family tree', icon: Network, subtitle: 'Explore every generation' },
   people: { label: 'People', icon: Users, subtitle: 'Manage family profiles' },
   families: { label: 'Family units', icon: HeartHandshake, subtitle: 'Connect partners and children' },
   relationships: { label: 'Relationships', icon: GitBranch, subtitle: 'Find how two people connect' },
+  requests: { label: 'Access requests', icon: UserCheck, subtitle: 'Approve who can enter the archive' },
   tools: { label: 'Data & settings', icon: Settings2, subtitle: 'Root family, import, and export' },
 };
 
@@ -26,9 +27,11 @@ export function Workspace({ identity }: { identity: UserIdentity }) {
   const [tree, setTree] = useState<FamilyTreeData | null>(null); const [view, setView] = useState<View>('tree'); const [error, setError] = useState<string | null>(null); const [toast, setToast] = useState<string | null>(null); const [navOpen, setNavOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null); const [focusPersonId, setFocusPersonId] = useState<string | null>(null); const [path, setPath] = useState<string[]>([]); const [searchOpen, setSearchOpen] = useState(false);
   const [personEditor, setPersonEditor] = useState<{ open: boolean; person: Person | null }>({ open: false, person: null }); const [unitEditor, setUnitEditor] = useState<{ open: boolean; unit: FamilyUnit | null }>({ open: false, unit: null });
+  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const refresh = useCallback(async () => { try { setError(null); setTree(await loadTree(isAdmin)); } catch { setError('The family tree could not be loaded. Check your connection and Firestore access.'); } }, [isAdmin]);
+  const refresh = useCallback(async () => { try { setError(null); const [nextTree, nextRequests] = await Promise.all([loadTree(isAdmin), isAdmin ? loadPendingAccessRequests() : Promise.resolve([])]); setTree(nextTree); setAccessRequests(nextRequests); } catch { setError('The family archive could not be loaded. Check your connection and Firestore access.'); } }, [isAdmin]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (!isAdmin) return; return subscribePendingAccessRequests(setAccessRequests, () => setError('Access requests could not be refreshed.')); }, [isAdmin]);
   useEffect(() => { const key = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') { event.preventDefault(); setSearchOpen(true); } if (event.key === 'Escape') setSearchOpen(false); }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, []);
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(null), 3200); };
   const navigate = (next: View) => { setView(next); setNavOpen(false); if (next !== 'tree') setSelectedPersonId(null); };
@@ -47,8 +50,8 @@ export function Workspace({ identity }: { identity: UserIdentity }) {
 
   return <div className="app-shell">
     <aside className={`sidebar ${navOpen ? 'open' : ''}`}><div className="sidebar-brand"><div className="brand-mark small"><GitBranch size={19} /></div><div><strong>Parivara</strong><small>Family archive</small></div><button type="button" className="nav-close" onClick={() => setNavOpen(false)}><X size={18} /></button></div>
-      <nav><p>Workspace</p>{availableViews.map((key) => { const item = VIEW_META[key]; const Icon = item.icon; return <button key={key} type="button" className={view === key ? 'active' : ''} onClick={() => navigate(key)}><Icon size={17} /><span>{item.label}</span>{key === 'people' && <b>{tree.people.length}</b>}</button>; })}</nav>
-      <div className="sidebar-profile"><span className="profile-avatar">{identity.displayName[0]?.toLocaleUpperCase()}</span><div><strong>{identity.displayName}</strong><small>{isAdmin ? 'Administrator' : 'Viewer'}</small></div><button type="button" onClick={() => void logout()} aria-label="Sign out"><LogOut size={16} /></button></div>
+      <nav><p>Workspace</p>{availableViews.map((key) => { const item = VIEW_META[key]; const Icon = item.icon; return <button key={key} type="button" className={view === key ? 'active' : ''} onClick={() => navigate(key)}><Icon size={17} /><span>{item.label}</span>{key === 'people' && <b>{tree.people.length}</b>}{key === 'requests' && accessRequests.length > 0 && <b>{accessRequests.length}</b>}</button>; })}</nav>
+      <div className="sidebar-profile"><span className="profile-avatar">{identity.displayName[0]?.toLocaleUpperCase()}</span><div><strong>{identity.displayName}</strong><small>{isAdmin ? 'Administrator' : 'User'}</small></div><button type="button" onClick={() => void logout()} aria-label="Sign out"><LogOut size={16} /></button></div>
     </aside>
     {navOpen && <button className="nav-scrim" onClick={() => setNavOpen(false)} aria-label="Close navigation" />}
     <main className="workspace"><header className="topbar"><button type="button" className="menu-button" onClick={() => setNavOpen(true)}><Menu size={20} /></button><div><p>{VIEW_META[view].subtitle}</p><h1>{VIEW_META[view].label}</h1></div><div className="topbar-actions"><button type="button" className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>Search family</span><kbd>⌘ K</kbd></button>{isAdmin && view === 'people' && <button type="button" className="primary-button" onClick={() => setPersonEditor({ open: true, person: null })}><Plus size={16} /> Add person</button>}{isAdmin && view === 'families' && <button type="button" className="primary-button" onClick={() => setUnitEditor({ open: true, unit: null })}><Plus size={16} /> Connect family</button>}</div></header>
@@ -58,6 +61,7 @@ export function Workspace({ identity }: { identity: UserIdentity }) {
         {view === 'people' && <PeopleView tree={tree} isAdmin={isAdmin} onSelect={choosePerson} onEdit={(person) => setPersonEditor({ open: true, person })} onDelete={(person) => void deletePersonDirect(person)} />}
         {isAdmin && view === 'families' && <FamiliesView tree={tree} onEdit={(unit) => setUnitEditor({ open: true, unit })} onDelete={(unit) => void deleteUnitDirect(unit)} />}
         {view === 'relationships' && <RelationshipsView tree={tree} onResult={(nextPath) => { setPath(nextPath); setView('tree'); }} />}
+        {isAdmin && view === 'requests' && <AccessRequestsView requests={accessRequests} onChanged={refresh} notify={notify} />}
         {isAdmin && view === 'tools' && <ToolsView tree={tree} onRoot={async (id) => { await setRoot(id); await refresh(); notify('Root family updated'); }} onExport={() => exportTree(tree)} onImport={() => fileRef.current?.click()} />}
       </section>
     </main>
@@ -78,6 +82,22 @@ function PeopleView({ tree, isAdmin, onSelect, onEdit, onDelete }: { tree: Famil
 function FamiliesView({ tree, onEdit, onDelete }: { tree: FamilyTreeData; onEdit: (unit: FamilyUnit) => void; onDelete: (unit: FamilyUnit) => void }) {
   const byId = new Map(tree.people.map((person) => [person.id, person]));
   return <div className="content-page"><div className="section-intro"><div><p className="eyebrow">{tree.familyUnits.length} connections</p><h2>Family units</h2><p>Partners form the top of each unit; their children become the next generation on the canvas.</p></div></div><div className="unit-list">{tree.familyUnits.map((unit) => { const parents = [unit.husbandId, unit.wifeId].map((id) => id ? byId.get(id)?.name : null).filter(Boolean); return <article key={unit.id} className="unit-row"><button type="button" className="unit-row-main" onClick={() => onEdit(unit)}><span className="unit-icon"><HeartHandshake size={18} /></span><span><strong>{parents.join(' & ') || 'Incomplete family'}</strong><small>{unit.childrenIds.length} {unit.childrenIds.length === 1 ? 'child' : 'children'}{unit.anniversaryDate ? ` · Since ${unit.anniversaryDate}` : ''}</small></span>{tree.selectedRootFamilyUnitId === unit.id && <span className="root-pill"><Crown size={11} /> Root</span>}<ChevronRight size={17} /></button><button type="button" className="unit-delete" onClick={() => onDelete(unit)} aria-label={`Delete ${parents.join(' and ') || 'family unit'}`}><Trash2 size={15} /><span>Delete</span></button></article>; })}</div></div>;
+}
+
+function AccessRequestsView({ requests, onChanged, notify }: { requests: AccessRequest[]; onChanged: () => Promise<void>; notify: (message: string) => void }) {
+  const [busyUid, setBusyUid] = useState<string | null>(null);
+  const decide = async (request: AccessRequest, decision: 'admin' | 'user' | 'reject') => {
+    if (decision === 'admin' && !window.confirm(`Grant administrator access to ${request.displayName} (${request.email})? Administrators can view contacts, change the tree, delete records, and approve other users.`)) return;
+    setBusyUid(request.uid);
+    try {
+      if (decision === 'reject') await rejectAccessRequest(request.uid); else await approveAccessRequest(request.uid, decision);
+      await onChanged(); notify(decision === 'reject' ? 'Access request rejected' : `${request.displayName} approved as ${decision === 'admin' ? 'an administrator' : 'a user'}`);
+    } catch (cause) { window.alert(cause instanceof Error ? cause.message : 'The access request could not be updated.'); }
+    finally { setBusyUid(null); }
+  };
+  return <div className="content-page"><div className="section-intro"><div><p className="eyebrow">Privacy controls</p><h2>Access requests</h2><p>Approve only people you recognize. Users can view the public family tree; administrators can also see contacts and change all family data.</p></div></div>
+    {requests.length === 0 ? <div className="empty-requests"><ShieldCheck size={25} /><h3>No pending requests</h3><p>New Google sign-ins will appear here for review.</p></div> : <div className="access-request-list">{requests.map((request) => <article className="access-request-card" key={request.uid}><span className="profile-avatar">{request.displayName[0]?.toLocaleUpperCase()}</span><div className="access-request-copy"><strong>{request.displayName}</strong><small>{request.email}</small><time>{request.requestedAt ? `Requested ${new Date(request.requestedAt).toLocaleString()}` : 'Request time unavailable'}</time></div><div className="access-request-actions"><button type="button" className="secondary-button" disabled={busyUid === request.uid} onClick={() => void decide(request, 'user')}>Approve user</button><button type="button" className="primary-button" disabled={busyUid === request.uid} onClick={() => void decide(request, 'admin')}>Approve admin</button><button type="button" className="danger-button" disabled={busyUid === request.uid} onClick={() => void decide(request, 'reject')}>Reject</button></div></article>)}</div>}
+  </div>;
 }
 
 function RelationshipsView({ tree, onResult }: { tree: FamilyTreeData; onResult: (path: string[]) => void }) {

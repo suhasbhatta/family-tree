@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { browserSessionPersistence, GoogleAuthProvider, onAuthStateChanged, setPersistence, signInWithPopup, signOut, type User } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import type { FamilyTreeData, FamilyUnit, FamilyUnitDraft, Person, PersonDraft } from '../types/family';
 import { validId, validatePersonDraft } from './validation';
@@ -19,25 +19,48 @@ const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 
-export interface UserIdentity { user: User; displayName: string; role: 'admin' | 'viewer' }
+export interface UserIdentity { user: User; displayName: string; role: 'admin' | 'user' }
+export interface AccessRequestIdentity { user: User; displayName: string; status: 'pending' | 'rejected' }
+export type AuthState =
+  | { kind: 'signedOut' }
+  | { kind: 'waiting'; request: AccessRequestIdentity }
+  | { kind: 'approved'; identity: UserIdentity };
 
-export async function initializeAuth(listener: (identity: UserIdentity | null, error?: string) => void): Promise<() => void> {
-  if (!auth || !db) { listener(null, 'Firebase build configuration is missing.'); return () => undefined; }
-  try { await setPersistence(auth, browserSessionPersistence); } catch { listener(null, 'Secure sign-in could not be initialized. Refresh and try again.'); return () => undefined; }
-  return onAuthStateChanged(auth, async (user) => {
-    if (!user) { listener(null); return; }
+export async function initializeAuth(listener: (state: AuthState, error?: string) => void): Promise<() => void> {
+  if (!auth || !db) { listener({ kind: 'signedOut' }, 'Firebase build configuration is missing.'); return () => undefined; }
+  try { await setPersistence(auth, browserSessionPersistence); } catch { listener({ kind: 'signedOut' }, 'Secure sign-in could not be initialized. Refresh and try again.'); return () => undefined; }
+  let stopAccess: () => void = () => {}; let stopRequest: () => void = () => {};
+  const stopDocuments = () => { stopAccess(); stopRequest(); stopAccess = () => {}; stopRequest = () => {}; };
+  const stopAuth = onAuthStateChanged(auth, async (user) => {
+    stopDocuments();
+    if (!user) { listener({ kind: 'signedOut' }); return; }
     try {
       const providers = new Set(user.providerData.map((item) => item.providerId));
-      if (!user.emailVerified || !providers.has('google.com')) throw new Error('unauthorized');
-      const access = await getDoc(doc(db, 'adminAccess', user.uid));
-      const data = access.data();
-      const isAdmin = access.exists() && data?.status === 'active' && data?.treeId === treeId;
-      listener({ user, role: isAdmin ? 'admin' : 'viewer', displayName: isAdmin && typeof data.displayName === 'string' ? data.displayName : user.displayName ?? (isAdmin ? 'Administrator' : 'Viewer') });
+      if (!user.emailVerified || !user.email || !providers.has('google.com')) throw new Error('unauthorized');
+      const accessRef = doc(db, 'adminAccess', user.uid); const requestRef = doc(db, 'accessRequests', user.uid);
+      const [initialAccess, initialRequest] = await Promise.all([getDoc(accessRef), getDoc(requestRef)]);
+      if (!initialAccess.exists() && !initialRequest.exists()) {
+        await setDoc(requestRef, { treeId, email: user.email, displayName: user.displayName ?? 'Google user', status: 'pending', approvedRole: null, requestedAt: serverTimestamp(), updatedAt: serverTimestamp(), reviewedAt: null, reviewedBy: null });
+      }
+      const resolveAccess = async () => {
+        const [access, request] = await Promise.all([getDoc(accessRef), getDoc(requestRef)]); const data = access.data();
+        if (access.exists() && data?.status === 'active' && data?.treeId === treeId && (data.role === 'admin' || data.role === 'user' || data.role == null)) {
+          const role: UserIdentity['role'] = data.role === 'user' ? 'user' : 'admin';
+          listener({ kind: 'approved', identity: { user, role, displayName: typeof data.displayName === 'string' ? data.displayName : user.displayName ?? (role === 'admin' ? 'Administrator' : 'Family member') } });
+          return;
+        }
+        const requestData = request.data(); const status = requestData?.status === 'rejected' ? 'rejected' : 'pending';
+        listener({ kind: 'waiting', request: { user, status, displayName: user.displayName ?? 'Google user' } });
+      };
+      await resolveAccess();
+      stopAccess = onSnapshot(accessRef, () => void resolveAccess());
+      stopRequest = onSnapshot(requestRef, () => void resolveAccess());
     } catch {
       await signOut(auth);
-      listener(null, 'Unable to verify Google access. Please try again.');
+      listener({ kind: 'signedOut' }, 'Unable to verify Google access. Please try again.');
     }
   });
+  return () => { stopDocuments(); stopAuth(); };
 }
 
 export async function login(): Promise<void> {
@@ -57,6 +80,58 @@ function requireDb() {
 const treeRef = () => doc(requireDb().db, 'trees', treeId);
 const auditRef = () => doc(collection(requireDb().db, 'auditEvents'));
 const audit = (uid: string, action: string, resourceType: string, resourceId: string) => ({ treeId, actorUid: uid, action, resourceType, resourceId, createdAt: serverTimestamp() });
+
+export interface AccessRequest {
+  uid: string;
+  email: string;
+  displayName: string;
+  requestedAt: string | null;
+}
+
+export async function loadPendingAccessRequests(): Promise<AccessRequest[]> {
+  const { db } = requireDb();
+  const snapshot = await getDocs(query(collection(db, 'accessRequests'), where('treeId', '==', treeId)));
+  return snapshot.docs.flatMap((item) => {
+    const data = item.data();
+    if (data.status !== 'pending') return [];
+    return [{ uid: item.id, email: String(data.email ?? ''), displayName: String(data.displayName ?? 'Google user'), requestedAt: data.requestedAt?.toDate?.().toISOString() ?? null }];
+  }).sort((a, b) => (a.requestedAt ?? '').localeCompare(b.requestedAt ?? ''));
+}
+
+export function subscribePendingAccessRequests(listener: (requests: AccessRequest[]) => void, onError: () => void): () => void {
+  const { db } = requireDb();
+  return onSnapshot(query(collection(db, 'accessRequests'), where('treeId', '==', treeId)), (snapshot) => {
+    const requests = snapshot.docs.flatMap((item) => {
+      const data = item.data();
+      if (data.status !== 'pending') return [];
+      return [{ uid: item.id, email: String(data.email ?? ''), displayName: String(data.displayName ?? 'Google user'), requestedAt: data.requestedAt?.toDate?.().toISOString() ?? null }];
+    }).sort((a, b) => (a.requestedAt ?? '').localeCompare(b.requestedAt ?? ''));
+    listener(requests);
+  }, onError);
+}
+
+export async function approveAccessRequest(requestUid: string, role: UserIdentity['role']): Promise<void> {
+  const { db, uid } = requireDb(); const requestRef = doc(db, 'accessRequests', requestUid); const accessRef = doc(db, 'adminAccess', requestUid);
+  await runTransaction(db, async (tx) => {
+    const [requestSnapshot, accessSnapshot] = await Promise.all([tx.get(requestRef), tx.get(accessRef)]);
+    const requestData = requestSnapshot.data();
+    if (!requestSnapshot.exists() || requestData?.treeId !== treeId || requestData.status !== 'pending') throw new Error('This request is no longer pending.');
+    if (accessSnapshot.exists()) throw new Error('This Google account already has access.');
+    tx.set(accessRef, { treeId, status: 'active', role, displayName: requestData.displayName, email: requestData.email, createdAt: serverTimestamp(), approvedAt: serverTimestamp(), approvedBy: uid });
+    tx.update(requestRef, { status: 'approved', approvedRole: role, updatedAt: serverTimestamp(), reviewedAt: serverTimestamp(), reviewedBy: uid });
+    tx.set(auditRef(), audit(uid, 'access_request.approved', 'accessRequest', requestUid));
+  });
+}
+
+export async function rejectAccessRequest(requestUid: string): Promise<void> {
+  const { db, uid } = requireDb(); const requestRef = doc(db, 'accessRequests', requestUid);
+  await runTransaction(db, async (tx) => {
+    const requestSnapshot = await tx.get(requestRef); const requestData = requestSnapshot.data();
+    if (!requestSnapshot.exists() || requestData?.treeId !== treeId || requestData.status !== 'pending') throw new Error('This request is no longer pending.');
+    tx.update(requestRef, { status: 'rejected', approvedRole: null, updatedAt: serverTimestamp(), reviewedAt: serverTimestamp(), reviewedBy: uid });
+    tx.set(auditRef(), audit(uid, 'access_request.rejected', 'accessRequest', requestUid));
+  });
+}
 
 export async function loadTree(includePrivate = false): Promise<FamilyTreeData> {
   requireDb();

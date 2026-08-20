@@ -38,7 +38,10 @@ beforeEach(async () => {
       treeId: 'primary', status: 'active', displayName: 'Primary admin',
     });
     await db.doc('adminAccess/second-admin').set({
-      treeId: 'primary', status: 'active', displayName: 'Second admin',
+      treeId: 'primary', status: 'active', role: 'admin', displayName: 'Second admin',
+    });
+    await db.doc('adminAccess/user').set({
+      treeId: 'primary', status: 'active', role: 'user', displayName: 'Approved user',
     });
     await db.doc('trees/primary').set({
       schemaVersion: 2,
@@ -76,6 +79,17 @@ beforeEach(async () => {
       resourceId: 'p1',
       createdAt: now,
     });
+    await db.doc('accessRequests/requestor').set({
+      treeId: 'primary',
+      email: 'requestor@example.com',
+      displayName: 'Requesting User',
+      status: 'pending',
+      approvedRole: null,
+      requestedAt: now,
+      updatedAt: now,
+      reviewedAt: null,
+      reviewedBy: null,
+    });
   });
 });
 
@@ -85,19 +99,49 @@ test('denies all family data to unauthenticated visitors', async () => {
   await assertFails(db.doc('trees/primary/people/p1').get());
 });
 
-test('allows any verified Google user to read the public tree only', async () => {
+test('blocks an unapproved Google account from family data', async () => {
   const db = environment.authenticatedContext('other', googleClaims).firestore();
-  await assertSucceeds(db.doc('trees/primary').get());
-  await assertSucceeds(db.doc('trees/primary/people/p1').get());
-  await assertSucceeds(db.doc('trees/primary/familyUnits/f1').get());
+  await assertFails(db.doc('trees/primary').get());
+  await assertFails(db.doc('trees/primary/people/p1').get());
+  await assertFails(db.doc('trees/primary/familyUnits/f1').get());
   await assertSucceeds(db.doc('adminAccess/other').get());
   await assertFails(db.doc('trees/primary/personPrivate/p1').get());
   await assertFails(db.doc('auditEvents/event1').get());
   await assertFails(db.doc('adminAccess/admin').get());
 });
 
-test('prevents a Google viewer from changing any family data', async () => {
-  const db = environment.authenticatedContext('other', googleClaims).firestore();
+test('lets a verified Google account create only its own pending request', async () => {
+  const db = environment.authenticatedContext('new-user', {
+    email: 'new-user@example.com',
+    email_verified: true,
+    firebase: {sign_in_provider: 'google.com'},
+  }).firestore();
+  await assertSucceeds(db.doc('accessRequests/new-user').set({
+    treeId: 'primary',
+    email: 'new-user@example.com',
+    displayName: 'New User',
+    status: 'pending',
+    approvedRole: null,
+    requestedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    reviewedAt: null,
+    reviewedBy: null,
+  }));
+  await assertSucceeds(db.doc('accessRequests/new-user').get());
+  await assertFails(db.doc('accessRequests/someone-else').set({
+    treeId: 'primary', email: 'new-user@example.com', displayName: 'Wrong ID',
+    status: 'pending', approvedRole: null, requestedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(), reviewedAt: null, reviewedBy: null,
+  }));
+});
+
+test('allows an approved user to view public data but never mutate it', async () => {
+  const db = environment.authenticatedContext('user', googleClaims).firestore();
+  await assertSucceeds(db.doc('trees/primary').get());
+  await assertSucceeds(db.doc('trees/primary/people/p1').get());
+  await assertSucceeds(db.doc('trees/primary/familyUnits/f1').get());
+  await assertFails(db.doc('trees/primary/personPrivate/p1').get());
+  await assertFails(db.doc('auditEvents/event1').get());
   await assertFails(db.doc('trees/primary/people/p2').set({
     name: 'Unauthorized change',
     gender: 'unknown',
@@ -158,6 +202,13 @@ test('allows every active Google administrator to read private tree data', async
   }
 });
 
+test('allows only administrators to list tree-scoped access requests', async () => {
+  const adminDb = environment.authenticatedContext('admin', googleClaims).firestore();
+  const userDb = environment.authenticatedContext('user', googleClaims).firestore();
+  await assertSucceeds(adminDb.collection('accessRequests').where('treeId', '==', 'primary').get());
+  await assertFails(userDb.collection('accessRequests').where('treeId', '==', 'primary').get());
+});
+
 test('allows an administrator to create validated family records', async () => {
   const db = environment.authenticatedContext('admin', googleClaims).firestore();
   await assertSucceeds(db.doc('trees/primary/people/p2').set({
@@ -182,15 +233,73 @@ test('rejects malformed records and skipped profile versions', async () => {
   }));
 });
 
-test('prevents every browser client from changing administrator access', async () => {
+test('allows an administrator to atomically approve a request as user', async () => {
   const adminDb = environment.authenticatedContext('admin', googleClaims).firestore();
-  const otherDb = environment.authenticatedContext('other', googleClaims).firestore();
+  const batch = adminDb.batch();
+  batch.set(adminDb.doc('adminAccess/requestor'), {
+    treeId: 'primary', status: 'active', role: 'user',
+    displayName: 'Requesting User', email: 'requestor@example.com',
+    createdAt: serverTimestamp(), approvedAt: serverTimestamp(), approvedBy: 'admin',
+  });
+  batch.update(adminDb.doc('accessRequests/requestor'), {
+    status: 'approved', approvedRole: 'user', updatedAt: serverTimestamp(),
+    reviewedAt: serverTimestamp(), reviewedBy: 'admin',
+  });
+  batch.set(adminDb.doc('auditEvents/approval'), {
+    treeId: 'primary', actorUid: 'admin', action: 'access_request.approved',
+    resourceType: 'accessRequest', resourceId: 'requestor', createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+
+  const approvedDb = environment.authenticatedContext('requestor', {
+    email: 'requestor@example.com', email_verified: true,
+    firebase: {sign_in_provider: 'google.com'},
+  }).firestore();
+  await assertSucceeds(approvedDb.doc('trees/primary').get());
+  await assertFails(approvedDb.doc('trees/primary/personPrivate/p1').get());
+});
+
+test('allows an administrator to reject a pending request without granting access', async () => {
+  const adminDb = environment.authenticatedContext('admin', googleClaims).firestore();
+  const batch = adminDb.batch();
+  batch.update(adminDb.doc('accessRequests/requestor'), {
+    status: 'rejected', approvedRole: null, updatedAt: serverTimestamp(),
+    reviewedAt: serverTimestamp(), reviewedBy: 'admin',
+  });
+  batch.set(adminDb.doc('auditEvents/rejection'), {
+    treeId: 'primary', actorUid: 'admin', action: 'access_request.rejected',
+    resourceType: 'accessRequest', resourceId: 'requestor', createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+
+  const rejectedDb = environment.authenticatedContext('requestor', {
+    email: 'requestor@example.com', email_verified: true,
+    firebase: {sign_in_provider: 'google.com'},
+  }).firestore();
+  await assertFails(rejectedDb.doc('trees/primary').get());
+  await assertSucceeds(rejectedDb.doc('accessRequests/requestor').get());
+});
+
+test('prevents self-approval and non-atomic access grants', async () => {
+  const adminDb = environment.authenticatedContext('admin', googleClaims).firestore();
+  const requestorDb = environment.authenticatedContext('requestor', {
+    email: 'requestor@example.com', email_verified: true,
+    firebase: {sign_in_provider: 'google.com'},
+  }).firestore();
   await assertFails(adminDb.doc('adminAccess/admin').update({status: 'disabled'}));
-  await assertFails(adminDb.doc('adminAccess/new-admin').set({
-    treeId: 'primary', status: 'active',
+  await assertFails(adminDb.doc('adminAccess/requestor').set({
+    treeId: 'primary', status: 'active', role: 'admin',
+    displayName: 'Requesting User', email: 'requestor@example.com',
+    createdAt: serverTimestamp(), approvedAt: serverTimestamp(), approvedBy: 'admin',
   }));
-  await assertFails(otherDb.doc('adminAccess/other').set({
-    treeId: 'primary', status: 'active',
+  await assertFails(requestorDb.doc('accessRequests/requestor').update({
+    status: 'approved', approvedRole: 'admin', updatedAt: serverTimestamp(),
+    reviewedAt: serverTimestamp(), reviewedBy: 'requestor',
+  }));
+  await assertFails(requestorDb.doc('adminAccess/requestor').set({
+    treeId: 'primary', status: 'active', role: 'admin',
+    displayName: 'Requesting User', email: 'requestor@example.com',
+    createdAt: serverTimestamp(), approvedAt: serverTimestamp(), approvedBy: 'requestor',
   }));
 });
 

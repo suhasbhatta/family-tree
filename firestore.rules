@@ -12,11 +12,87 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
 
-    function isAdmin(treeId) {
+    function isMember(treeId) {
       return isGoogleUser()
         && exists(/databases/$(database)/documents/adminAccess/$(request.auth.uid))
         && adminRecord().data.status == 'active'
-        && adminRecord().data.treeId == treeId;
+        && adminRecord().data.treeId == treeId
+        && (!adminRecord().data.keys().hasAny(['role'])
+          || adminRecord().data.role in ['admin', 'user']);
+    }
+
+    function isAdmin(treeId) {
+      return isMember(treeId)
+        && (!adminRecord().data.keys().hasAny(['role'])
+          || adminRecord().data.role == 'admin');
+    }
+
+    function validAccessRequestCreate(uid) {
+      return request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'treeId', 'email', 'displayName', 'status', 'approvedRole',
+          'requestedAt', 'updatedAt', 'reviewedAt', 'reviewedBy'
+        ])
+        && request.resource.data.treeId is string
+        && request.resource.data.treeId.size() > 0
+        && request.resource.data.treeId.size() <= 128
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 120
+        && request.resource.data.status == 'pending'
+        && request.resource.data.approvedRole == null
+        && request.resource.data.requestedAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedBy == null;
+    }
+
+    function validAccessDecision(uid) {
+      return resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly([
+          'treeId', 'email', 'displayName', 'status', 'approvedRole',
+          'requestedAt', 'updatedAt', 'reviewedAt', 'reviewedBy'
+        ])
+        && request.resource.data.treeId == resource.data.treeId
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.displayName == resource.data.displayName
+        && request.resource.data.requestedAt == resource.data.requestedAt
+        && request.resource.data.status in ['approved', 'rejected']
+        && (request.resource.data.status == 'approved'
+          ? request.resource.data.approvedRole in ['admin', 'user']
+          : request.resource.data.approvedRole == null)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.reviewedAt == request.time
+        && request.resource.data.reviewedBy == request.auth.uid
+        && (request.resource.data.status == 'rejected'
+          || (existsAfter(/databases/$(database)/documents/adminAccess/$(uid))
+            && getAfter(/databases/$(database)/documents/adminAccess/$(uid)).data.treeId == resource.data.treeId
+            && getAfter(/databases/$(database)/documents/adminAccess/$(uid)).data.status == 'active'
+            && getAfter(/databases/$(database)/documents/adminAccess/$(uid)).data.role == request.resource.data.approvedRole));
+    }
+
+    function validAccessGrant(uid) {
+      return request.resource.data.keys().hasOnly([
+          'treeId', 'status', 'role', 'displayName', 'email',
+          'createdAt', 'approvedAt', 'approvedBy'
+        ])
+        && request.resource.data.treeId is string
+        && request.resource.data.status == 'active'
+        && request.resource.data.role in ['admin', 'user']
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.approvedAt == request.time
+        && request.resource.data.approvedBy == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/accessRequests/$(uid))
+        && getAfter(/databases/$(database)/documents/accessRequests/$(uid)).data.status == 'approved'
+        && getAfter(/databases/$(database)/documents/accessRequests/$(uid)).data.treeId == request.resource.data.treeId
+        && getAfter(/databases/$(database)/documents/accessRequests/$(uid)).data.approvedRole == request.resource.data.role
+        && getAfter(/databases/$(database)/documents/accessRequests/$(uid)).data.email == request.resource.data.email;
     }
 
     function nullableString(value, maximum) {
@@ -78,7 +154,7 @@ service cloud.firestore {
     }
 
     match /trees/{treeId} {
-      allow read: if isGoogleUser();
+      allow read: if isMember(treeId);
       allow create: if isAdmin(treeId) && validTree()
         && request.resource.data.createdAt == request.time;
       allow update: if isAdmin(treeId) && validTree()
@@ -86,7 +162,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /people/{personId} {
-        allow read: if isGoogleUser();
+        allow read: if isMember(treeId);
         allow create: if isAdmin(treeId) && validPerson()
           && request.resource.data.version == 1
           && request.resource.data.createdAt == request.time;
@@ -97,7 +173,7 @@ service cloud.firestore {
       }
 
       match /familyUnits/{unitId} {
-        allow read: if isGoogleUser();
+        allow read: if isMember(treeId);
         allow create: if isAdmin(treeId) && validFamilyUnit()
           && request.resource.data.createdAt == request.time;
         allow update: if isAdmin(treeId) && validFamilyUnit()
@@ -113,8 +189,26 @@ service cloud.firestore {
     }
 
     match /adminAccess/{uid} {
-      allow read: if isGoogleUser() && request.auth.uid == uid;
-      allow write: if false;
+      allow get: if isGoogleUser() && request.auth.uid == uid;
+      allow list: if resource.data.treeId is string
+        && isAdmin(resource.data.treeId);
+      allow create: if isAdmin(request.resource.data.treeId)
+        && validAccessGrant(uid);
+      allow update, delete: if false;
+    }
+
+    match /accessRequests/{uid} {
+      allow get: if isGoogleUser()
+        && (request.auth.uid == uid
+          || (resource.data.treeId is string && isAdmin(resource.data.treeId)));
+      allow list: if resource.data.treeId is string
+        && isAdmin(resource.data.treeId);
+      allow create: if isGoogleUser()
+        && validAccessRequestCreate(uid);
+      allow update: if resource.data.treeId is string
+        && isAdmin(resource.data.treeId)
+        && validAccessDecision(uid);
+      allow delete: if false;
     }
 
     match /auditEvents/{eventId} {
@@ -128,9 +222,12 @@ service cloud.firestore {
         && request.resource.data.action in [
           'person.created', 'person.updated', 'person.deleted',
           'family_unit.created', 'family_unit.updated', 'family_unit.deleted',
-          'tree.root_changed', 'tree.import_replaced', 'tree.import_merged'
+          'tree.root_changed', 'tree.import_replaced', 'tree.import_merged',
+          'access_request.approved', 'access_request.rejected'
         ]
-        && request.resource.data.resourceType in ['person', 'familyUnit', 'tree']
+        && request.resource.data.resourceType in [
+          'person', 'familyUnit', 'tree', 'accessRequest'
+        ]
         && request.resource.data.resourceId is string
         && request.resource.data.resourceId.size() <= 128
         && request.resource.data.createdAt == request.time;
