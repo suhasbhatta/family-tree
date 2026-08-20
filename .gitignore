@@ -39,6 +39,7 @@ firestore-debug.log
 ui-debug.log
 **/service-account*.json
 **/.env
+**/.env.local
 
 # Node/Firebase Functions
 functions/node_modules/
